@@ -1,0 +1,15 @@
+pandas
+numpy
+akshare
+yfinance
+beautifulsoup4
+requests
+scikit-learn
+statsmodels
+torch
+transformers
+backtrader
+jupyter
+ipykernel
+matplotlib
+seaborn
