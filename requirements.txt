@@ -13,3 +13,5 @@ jupyter
 ipykernel
 matplotlib
 seaborn
+python-dotenv
+openai

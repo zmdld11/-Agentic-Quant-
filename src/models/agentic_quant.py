@@ -1,4 +1,4 @@
-import akshare as ak
+﻿import akshare as ak
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -8,10 +8,10 @@ import time
 class AgenticQuant:
     """
     单日推演智能体 (LLM Agentic Quant)
-    可以接受任意 A股 代码，自动获取该公司主营业务、量价特征、个股专属新闻以及全球宏观快讯，
+    可以接受任意 A股代码，自动获取该公司主营业务、量价特征、个股专属新闻以及全球宏观快讯，
     并送入大模型进行全面的基本面和情绪面联合推演。
     """
-    def __init__(self, api_key="sk-7ae89e952ee9477b9564cd09686769c0", base_url="https://api.deepseek.com/v1", model_name="deepseek-chat"):
+    def __init__(self, api_key="your_api_key_here", base_url="https://api.deepseek.com/v1", model_name="deepseek-chat"):
         self.api_key = api_key
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
@@ -29,7 +29,7 @@ class AgenticQuant:
                 }
         except Exception as e:
             print(f"获取公司资料失败: {e}")
-        return {"name": f"A股代码: {symbol}", "industry": "未知", "business": "未知", "brief": "缺少资料"}
+        return {"name": f"A股代码 {symbol}", "industry": "未知", "business": "未知", "brief": "缺少资料"}
 
     def fetch_quant_status(self, symbol: str) -> dict:
         print(f"正在获取 [{symbol}] 最新的K线数据并计算量化特征...")
@@ -88,7 +88,7 @@ class AgenticQuant:
             return
 
         # 2. 组装专家系统 Prompt
-        prompt = f"""你是一位深谙"政治经济学"与"行为金融学"的顶级 A 股量化游资操盘手。
+        prompt = f"""你是一位深谙政治经济学与行为金融学的顶尖A股量化游资操盘手。
 你需要结合资产当前的量价状态、公司的基本业务性质、以及今日的宏观/个股新闻，对该股票进行全面的“排雷”和明天的“推演”。
 
 【研究标的档案】：
@@ -96,9 +96,9 @@ class AgenticQuant:
 - 所属行业：{profile['industry']}
 - 主营业务：{profile['business']}
 
-【当天盘面量价特征（截止 {quant['date']}）】：
-- 现价：{quant['close']} 元 (今日涨跌幅: {quant['pct_change']}%)
-- 均线偏离度(MA20_Bias)：{quant['ma20_bias']:.4f} （反映中期筹码的获利及抗压盘，正为超买/获利盘多，负为超卖/套牢盘多）
+【当天盘面量价特征（截至 {quant['date']}）】：
+- 现价：{quant['close']} 元(今日涨跌幅 {quant['pct_change']}%)
+- 均线偏离度(MA20_Bias)：{quant['ma20_bias']:.4f} （反映中期筹码的获利及抗压盘，正为超买获利盘多，负为超卖套牢盘多）
 - 市场波动率(5日标准差)：{quant['volatility']:.4f}
 
 【今日全市场宏观事件快讯】：
@@ -135,10 +135,11 @@ class AgenticQuant:
             print(f"调用大模型报错: {e}")
 
 if __name__ == "__main__":
-    # 配置您的 API Key！
-    api_key = "sk-7ae89e952ee9477b9564cd09686769c0"
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    api_key = os.getenv("DEEPSEEK_API_KEY")
     agent = AgenticQuant(api_key=api_key)
     
-    # 我们可以输入任何A股代码测试：例如 600519 (贵州茅台) 或者 002594 (比亚迪)
     agent.compile_and_predict(symbol="002594")
-
