@@ -128,11 +128,15 @@ class AgenticQuant:
                 ],
                 temperature=0.7,
             )
+            report = response.choices[0].message.content
             print("\n==================== 📈 AI 投研推演报告 📈 ====================")
-            print(response.choices[0].message.content)
+            print(report)
             print("===============================================================\n")
+            return report
         except Exception as e:
-            print(f"调用大模型报错: {e}")
+            err_msg = f"调用大模型报错: {e}"
+            print(err_msg)
+            return err_msg
 
 if __name__ == "__main__":
     import os
