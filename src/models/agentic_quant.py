@@ -142,7 +142,7 @@ class AgenticQuant:
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
-                    {"role": "system", "content": "你是一个结合A股打板和大宽客数据投研的顶尖量化分析师。风格要犀利、利用数据说话、简明干练。"},
+                    {"role": "system", "content": "你是一个结合A股打板和大宽客数据投研的顶尖量化分析师。风格要犀利、利用数据说话、简明干练。请注意：你的输出将直接发送到QQ，请务必使用纯文本格式，绝对不要使用任何 Markdown 语法（如加粗的**、标题的#等），请使用普通的换行和数字编号来进行排版。"},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,

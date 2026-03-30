@@ -43,9 +43,15 @@ async def handle_stock(bot: Bot, event: Event, args: tuple = RegexGroup()):
     try:
         # Nonebot推荐使用 asyncio.to_thread 运行阻塞任务（如 requests 请求和 OpenAI 回调）
         import asyncio
+        import re
         report = await asyncio.to_thread(quant_engine.compile_and_predict, symbol)
         
         if report:
+            # 基础降级清理：防止大模型偶尔忘记指令，过滤掉多余的Markdown标记使得排版在QQ中更清爽
+            report = re.sub(r'(\*\*|__)(.*?)\1', r'\2', report) # 删掉加粗粗体
+            report = re.sub(r'^#+\s+', '', report, flags=re.MULTILINE) # 删掉标题的 #
+            report = re.sub(r'^-{3,}|\*{3,}|_{3,}$', '', report, flags=re.MULTILINE) # 删掉分割线
+            
             # 推演成功，加上首尾装饰，返回给QQ
             final_msg = f"🤖 Agentic Quant 个股脱水研报\n{'='*20}\n{report}\n{'='*20}\n💡 仅供交流，股市有风险，投资需谨慎。"
             await stock_matcher.send(final_msg)
