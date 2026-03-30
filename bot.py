@@ -13,6 +13,7 @@ driver = nonebot.get_driver()
 driver.register_adapter(ONEBOT_V11Adapter)
 
 from nonebot.plugin import on_regex
+from nonebot.rule import to_me
 from nonebot.adapters.onebot.v11 import Bot, Event
 from nonebot.params import RegexGroup
 from nonebot.adapters.onebot.v11.message import Message
@@ -26,7 +27,8 @@ api_key = os.getenv("DEEPSEEK_API_KEY")
 quant_engine = AgenticQuant(api_key=api_key) if api_key else None
 
 # 使用正则表达式：匹配 "查股票 600519", "分析600519", 或者直接发 "600519"
-stock_matcher = on_regex(r"^(?:查股票\s*|/分析\s*|分析\s*)?(\d{6})$", priority=1, block=True)
+# 加入 rule=to_me()：私聊不需要@，群聊则必须主动 @机器人 才会触发（防止别人发验证码误触）
+stock_matcher = on_regex(r"^(?:查股票\s*|/分析\s*|分析\s*)?(\d{6})$", rule=to_me(), priority=1, block=True)
 
 @stock_matcher.handle()
 async def handle_stock(bot: Bot, event: Event, args: tuple = RegexGroup()):
