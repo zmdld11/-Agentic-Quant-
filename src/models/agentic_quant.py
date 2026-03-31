@@ -8,33 +8,65 @@ import time
 class AgenticQuant:
     '''单日推演智能体 (LLM Agentic Quant)
     可以接受任意A股代码，自动获取该公司主营业务、量价特征、个股新闻以及全球宏观快讯。
+    加入内存级缓存机制，防恶意刷单导致IP被封。
     '''
     def __init__(self, api_key="your_api_key_here", base_url="https://api.deepseek.com/v1", model_name="deepseek-chat"):
         self.api_key = api_key
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
+        # 内存级缓存，防止IP被封：数据有效存活期1小时 (3600秒)
+        self.cache = {}
+        self.cache_ttl = 3600 
+
+    def _get_cache(self, key):
+        if key in self.cache:
+            data, timestamp = self.cache[key]
+            if time.time() - timestamp < self.cache_ttl:
+                return data
+        return None
+
+    def _set_cache(self, key, data):
+        self.cache[key] = (data, time.time())
 
     def fetch_company_profile(self, symbol: str) -> dict:
+        cache_key = f"profile_{symbol}"
+        if cached := self._get_cache(cache_key): return cached
+        
         print(f"正在获取 [{symbol}] 的公司基本信息与行业属性...")
         try:
             df_info = ak.stock_profile_cninfo(symbol)
             if not df_info.empty:
-                return {
+                res = {
                     "name": df_info['公司名称'].values[0],
                     "industry": df_info['所属行业'].values[0],
                     "business": df_info['主营业务'].values[0],
                     "brief": df_info['机构简介'].values[0]
                 }
+                self._set_cache(cache_key, res)
+                return res
         except Exception as e:
             print(f"获取公司资料失败: {e}")
         return {"name": f"A股代码 {symbol}", "industry": "未知", "business": "未知", "brief": "缺少资料"}
 
     def fetch_quant_status(self, symbol: str) -> dict:
+        cache_key = f"quant_{symbol}"
+        if cached := self._get_cache(cache_key): return cached
+        
         print(f"正在获取 [{symbol}] 最新的K线数据并计算多维量化特征...")
         try:
-            # 获取日线级别前复权数据
-            df = ak.stock_zh_a_hist(symbol=symbol, period="daily", adjust="qfq")
-            
+            # 默认首选：东方财富数据源
+            try:
+                df = ak.stock_zh_a_hist(symbol=symbol, period="daily", adjust="qfq")
+            except Exception as e:
+                print(f"东方财富数据频繁获取被拦截，自动切换至腾讯备用图表源...")
+                prefix = "sh" if symbol.startswith("6") else ("bj" if symbol.startswith(("4", "8")) else "sz")
+                tx_df = ak.stock_zh_a_hist_tx(symbol=prefix + symbol)
+                df = pd.DataFrame()
+                df['日期'] = tx_df['date']
+                df['收盘'] = tx_df['close']
+                df['涨跌幅'] = tx_df['close'].pct_change() * 100 # 换算百分比
+                df['成交量'] = tx_df['amount'] # 代替成交量计算量比
+
             # 【指标1：均线偏离与波动率】
             df['MA20'] = df['收盘'].rolling(20).mean()
             df['MA20_Bias'] = (df['收盘'] - df['MA20']) / df['MA20']
