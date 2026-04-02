@@ -18,11 +18,16 @@ sudo apt install python3 python3-venv python3-pip git screen -y
 使用 Git 将你在 GitHub 上的代码克隆到云服务器上：
 
 ```bash
-# 如果国内阿里云服务器 clone 报错超时或 TLS 错误，请在原链接前加上镜像加速前缀：
-git clone https://mirror.ghproxy.com/https://github.com/zmdld11/-Agentic-Quant-.git
-# (备用加速链接) git clone https://kkgithub.com/zmdld11/-Agentic-Quant-.git
+# 关闭 SSL 验证
+git config --global http.sslVerify false
 
-cd -Agentic-Quant-
+# 强制使用 HTTP/1.1（有时能解决 TLS 错误）
+git config --global http.version HTTP/1.1
+
+# 再次尝试 clone
+git clone https://github.com/zmdld11/-Agentic-Quant-.git
+
+cd ./-Agentic-Quant-
 ```
 
 ## 第三步：部署隔离的 Python 虚拟环境与依赖
@@ -37,7 +42,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 # 3. 根据项目的清单文件一键安装依赖
-pip install -r requirements.txt
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
 ## 第四步：配置大模型 API 密钥
@@ -51,7 +56,10 @@ echo 'DEEPSEEK_API_KEY="sk-你的真实API秘钥写在这里"' > .env
 
 ## 第五步：配合 NapCatQQ 使用
 
-本项目的 `bot.py` 是逻辑中枢（通过 WS 连接 8080 端口），你同样需要在服务器上挂一个 **NapCatQQ**（建议使用 Docker 版本或 CLI 无头版本）来登录你的 QQ 号，并设置反向 WebSocket 连接至 `ws://127.0.0.1:8080`。
+本项目的 `bot.py` 是逻辑中枢（监听 8080 端口），你同样需要在服务器上挂一个 **NapCatQQ**（建议使用 Docker 版本或 CLI 无头版本）来登录你的 QQ 号，并设置反向 WebSocket 连接至：
+`ws://127.0.0.1:8080/onebot/v11/ws`
+
+> ⚠️ 注意：不要漏掉后面的 `/onebot/v11/ws` 后缀！且在 Napcat 里不要填写 Access Token 栏（留空即可），否则连接会报 403 拒绝访问。
 
 ## 第六步：启动机器人（后台持久运行）
 
