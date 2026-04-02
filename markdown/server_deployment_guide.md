@@ -18,8 +18,10 @@ sudo apt install python3 python3-venv python3-pip git screen -y
 使用 Git 将你在 GitHub 上的代码克隆到云服务器上：
 
 ```bash
-# 注意：请将下面的链接替换为你自己真实的 GitHub 仓库地址
-git clone https://github.com/您的用户名/-Agentic-Quant-.git
+# 如果国内阿里云服务器 clone 报错超时或 TLS 错误，请在原链接前加上镜像加速前缀：
+git clone https://mirror.ghproxy.com/https://github.com/zmdld11/-Agentic-Quant-.git
+# (备用加速链接) git clone https://kkgithub.com/zmdld11/-Agentic-Quant-.git
+
 cd -Agentic-Quant-
 ```
 
