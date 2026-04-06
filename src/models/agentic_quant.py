@@ -128,10 +128,55 @@ class AgenticQuant:
             
         return macro_news_list, stock_news_list
 
+    def fetch_retail_sentiment(self, symbol: str) -> list:
+        cache_key = f"sentiment_{symbol}"
+        if cached := self._get_cache(cache_key): return cached
+        
+        print(f"正在获取 [{symbol}] 的近期散户微观情绪与小道消息...")
+        import requests
+        import re
+        from datetime import datetime, timedelta
+        
+        try:
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            res = requests.get(f'https://guba.eastmoney.com/list,{symbol}.html', headers=headers, timeout=5)
+            res.encoding = 'utf-8'
+            
+            posts = re.findall(r'<div class="title"><a[^>]*>(.*?)</a></div></td>.*?<div class="update">(\d{2}-\d{2}) \d{2}:\d{2}</div>', res.text)
+            
+            valid_posts = []
+            now = datetime.now()
+            current_year = now.year
+            
+            for title, date_str in posts:
+                try:
+                    post_date = datetime.strptime(f"{current_year}-{date_str}", "%Y-%m-%d")
+                    if post_date > now + timedelta(days=1):
+                        post_date = datetime.strptime(f"{current_year-1}-{date_str}", "%Y-%m-%d")
+                        
+                    if (now - post_date).days <= 7:
+                        clean_title = re.sub(r'<[^>]+>', '', title).strip()
+                        if clean_title and clean_title not in valid_posts:
+                            valid_posts.append(clean_title)
+                except:
+                    continue
+                    
+            res_list = valid_posts[:10]
+            if not res_list:
+                res_list = ["近7天该股票吧暂无活跃讨论或小道消息"]
+                
+            self._set_cache(cache_key, res_list)
+            return res_list
+        except Exception as e:
+            print(f"获取论坛情绪失败: {e}")
+            return ["获取论坛情绪失败"]
+
+
     def compile_and_predict(self, symbol: str):
         profile = self.fetch_company_profile(symbol)
         quant = self.fetch_quant_status(symbol)
         macro_news, stock_news = self.fetch_news(symbol)
+        retail_sentiment = self.fetch_retail_sentiment(symbol)
         
         if quant is None:
             print("无法获取该股票量价数据，停止推演。")
@@ -159,11 +204,15 @@ class AgenticQuant:
 【今日该股专属异动与新闻】：
 {chr(10).join(['- ' + str(n) for n in stock_news])}
 
+【散户微观情绪与小道消息（近7日）】：
+{chr(10).join(['- ' + str(n) for n in retail_sentiment])}
+
 【你的分析任务】：
 请用专业投研的风格写一段分析报告：
 1. 宏观政策映射：结合该公司的【主营业务性质】，分析今日的宏观新闻是否会间接（或直接）影响该行业的政策预期或流动性。
 2. 多维共振与资金情绪解读：结合个股专属新闻和今日盘面的多个技术指标（量比、均线、RSI、MACD等），指出当前的涨跌是由什么驱动的，大资金是在进场抢筹还是在拉高出货，有没有隐藏的筹码雷区（获利盘踩踏或恐慌杀跌）。
-3. 明日博弈预判：综合给出你对明日该股票走势的最终短期推断结论（看涨 / 看跌 / 震荡），并用一句话给出操作建议。'''
+3. 散户心理与暗线跟踪：结合最新的【散户微观情绪与小道消息】，指出市场是否存在未被新闻披露的“小作文”驱动，或者是否存在“买预期卖现实”的踩踏风险。
+4. 明日博弈预判：综合给出你对明日该股票走势的最终短期推断结论（看涨 / 看跌 / 震荡），并用一句话给出操作建议。'''
 
         print("\n\n================ AI 思考的大脑数据输入 ==================")
         print(prompt)
