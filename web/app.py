@@ -1,5 +1,6 @@
 import sys
 import os
+import traceback
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, HTTPException
@@ -38,7 +39,11 @@ async def analyze(req: AnalyzeRequest):
     symbol = req.symbol.strip()
     if not symbol.isdigit() or len(symbol) != 6:
         raise HTTPException(status_code=400, detail="请输入6位数字A股代码")
-    result = quant_engine.compile_and_predict(symbol)
+    try:
+        result = quant_engine.compile_and_predict(symbol)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
     return result

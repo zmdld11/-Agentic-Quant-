@@ -243,14 +243,14 @@ class AgenticQuant:
         quant = self.fetch_quant_status(symbol)
 
         if quant is None:
-            return {“error”: “无法获取该股票量价数据，停止推演。”}
+            return {"error": "无法获取该股票量价数据，停止推演。"}
 
         macro_news, stock_news = self.fetch_news(symbol)
         retail_sentiment = self.fetch_retail_sentiment(symbol)
         kline_data = self.fetch_kline_range(symbol, days=60)
 
         prompt = f'''你是一位深谙政治经济学与行为金融学的顶尖A股量化游资操盘手。
-你需要结合资产当前的多维技术面状态、公司的基本业务性质、以及今日的宏观/个股新闻，对该股票进行全面的”排雷”和明天的”推演”。
+你需要结合资产当前的多维技术面状态、公司的基本业务性质、以及今日的宏观/个股新闻，对该股票进行全面的"排雷"和明天的"推演"。
 
 【研究标的档案】：
 - 股票代码：{symbol} ({profile['name']})
@@ -278,42 +278,42 @@ class AgenticQuant:
 请用专业投研的风格写一段分析报告：
 1. 宏观政策映射：结合该公司的【主营业务性质】，分析今日的宏观新闻是否会间接（或直接）影响该行业的政策预期或流动性。
 2. 多维共振与资金情绪解读：结合个股专属新闻和今日盘面的多个技术指标（量比、均线、RSI、MACD等），指出当前的涨跌是由什么驱动的，大资金是在进场抢筹还是在拉高出货，有没有隐藏的筹码雷区（获利盘踩踏或恐慌杀跌）。
-3. 散户心理与暗线跟踪：结合最新的【散户微观情绪与小道消息】，指出市场是否存在未被新闻披露的”小作文”驱动，或者是否存在”买预期卖现实”的踩踏风险。
+3. 散户心理与暗线跟踪：结合最新的【散户微观情绪与小道消息】，指出市场是否存在未被新闻披露的"小作文"驱动，或者是否存在"买预期卖现实"的踩踏风险。
 4. 明日博弈预判：综合给出你对明日该股票走势的最终短期推断结论（看涨 / 看跌 / 震荡），并用一句话给出操作建议。'''
 
-        print(“\n\n================ AI 思考的大脑数据输入 ==================”)
+        print("\n\n================ AI 思考的大脑数据输入 ==================")
         print(prompt)
-        print(“=========================================================\n”)
+        print("=========================================================\n")
 
-        print(“🚀 正在请求大模型，利用该股票的性质、量价、环境综合推演，请等待...”)
+        print("正在请求大模型，利用该股票的性质、量价、环境综合推演，请等待...")
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
-                    {“role”: “system”, “content”: “你是一个结合A股打板和大宽客数据投研的顶尖量化分析师。风格要犀利、利用数据说话、简明干练。”},
-                    {“role”: “user”, “content”: prompt}
+                    {"role": "system", "content": "你是一个结合A股打板和大宽客数据投研的顶尖量化分析师。风格要犀利、利用数据说话、简明干练。"},
+                    {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
             )
             report = response.choices[0].message.content
-            print(“\n==================== 📈 AI 投研推演报告 📈 ====================”)
+            print("\n==================== AI 投研推演报告 ====================")
             print(report)
-            print(“===============================================================\n”)
+            print("===============================================================\n")
         except Exception as e:
-            report = f”调用大模型报错: {e}”
+            report = f"调用大模型报错: {e}"
             print(report)
 
         return {
-            “symbol”: symbol,
-            “name”: profile.get('name', ''),
-            “industry”: profile.get('industry', ''),
-            “business”: profile.get('business', ''),
-            “quote”: quant,
-            “kline_data”: kline_data,
-            “macro_news”: macro_news,
-            “stock_news”: stock_news,
-            “retail_sentiment”: retail_sentiment,
-            “report”: report
+            "symbol": symbol,
+            "name": profile.get('name', ''),
+            "industry": profile.get('industry', ''),
+            "business": profile.get('business', ''),
+            "quote": quant,
+            "kline_data": kline_data,
+            "macro_news": macro_news,
+            "stock_news": stock_news,
+            "retail_sentiment": retail_sentiment,
+            "report": report
         }
 
 if __name__ == "__main__":
