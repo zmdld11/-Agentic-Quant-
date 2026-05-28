@@ -32,7 +32,11 @@ def main():
             continue
 
         print(f"\n[系统已接收指令] 开始深度扫描并推演: {symbol}")
-        agent.compile_and_predict(symbol=symbol)
+        result = agent.compile_and_predict(symbol=symbol)
+        if "error" in result:
+            print(f"❌ {result['error']}")
+        else:
+            print(result["report"])
 
         print("\n" + "-"*40)
 

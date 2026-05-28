@@ -1,0 +1,16 @@
+[Unit]
+Description=Agentic Quant Web Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=admin
+WorkingDirectory=/home/admin/Agentic-Quant
+ExecStart=/home/admin/Agentic-Quant/.venv/bin/uvicorn web.app:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

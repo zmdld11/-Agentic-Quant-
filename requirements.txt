@@ -88,8 +88,7 @@ nbconvert==7.17.0
 nbformat==5.10.4
 nest-asyncio==1.6.0
 networkx==3.6.1
-nonebot-adapter-onebot==2.4.6
-nonebot2==2.4.4
+baostock==0.8.8
 notebook==7.5.5
 notebook_shim==0.2.4
 numpy==2.4.3

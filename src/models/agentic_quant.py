@@ -1,4 +1,5 @@
 import akshare as ak
+import baostock as bs
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -16,7 +17,18 @@ class AgenticQuant:
         self.model_name = model_name
         # 内存级缓存，防止IP被封：数据有效存活期1小时 (3600秒)
         self.cache = {}
-        self.cache_ttl = 3600 
+        self.cache_ttl = 3600
+
+    @staticmethod
+    def _to_baostock_code(symbol: str) -> str:
+        """600519 -> sh.600519, 002594 -> sz.002594"""
+        if symbol.startswith('6'):
+            return f"sh.{symbol}"
+        elif symbol.startswith(('0', '3')):
+            return f"sz.{symbol}"
+        elif symbol.startswith(('4', '8')):
+            return f"bj.{symbol}"
+        return f"sz.{symbol}"
 
     def _get_cache(self, key):
         if key in self.cache:
@@ -31,80 +43,134 @@ class AgenticQuant:
     def fetch_company_profile(self, symbol: str) -> dict:
         cache_key = f"profile_{symbol}"
         if cached := self._get_cache(cache_key): return cached
-        
+
         print(f"正在获取 [{symbol}] 的公司基本信息与行业属性...")
         try:
-            df_info = ak.stock_profile_cninfo(symbol)
-            if not df_info.empty:
+            bs.login()
+            rs = bs.query_stock_basic(code=self._to_baostock_code(symbol))
+            data = rs.get_data()
+            bs.logout()
+
+            if not data.empty:
+                row = data.iloc[0]
                 res = {
-                    "name": df_info['公司名称'].values[0],
-                    "industry": df_info['所属行业'].values[0],
-                    "business": df_info['主营业务'].values[0],
-                    "brief": df_info['机构简介'].values[0]
+                    "name": row['code_name'],
+                    "industry": row.get('industry', '未知') if 'industry' in data.columns else '未知',
+                    "business": row.get('business', '未知') if 'business' in data.columns else '未知',
+                    "brief": f"{row['code_name']}，上市日期: {row.get('ipoDate', 'N/A')}"
                 }
                 self._set_cache(cache_key, res)
                 return res
         except Exception as e:
             print(f"获取公司资料失败: {e}")
+            try: bs.logout()
+            except: pass
         return {"name": f"A股代码 {symbol}", "industry": "未知", "business": "未知", "brief": "缺少资料"}
 
     def fetch_quant_status(self, symbol: str) -> dict:
         cache_key = f"quant_{symbol}"
         if cached := self._get_cache(cache_key): return cached
-        
+
         print(f"正在获取 [{symbol}] 最新的K线数据并计算多维量化特征...")
         try:
-            # 默认首选：东方财富数据源
-            try:
-                df = ak.stock_zh_a_hist(symbol=symbol, period="daily", adjust="qfq")
-            except Exception as e:
-                print(f"东方财富数据频繁获取被拦截，自动切换至腾讯备用图表源...")
-                prefix = "sh" if symbol.startswith("6") else ("bj" if symbol.startswith(("4", "8")) else "sz")
-                tx_df = ak.stock_zh_a_hist_tx(symbol=prefix + symbol)
-                df = pd.DataFrame()
-                df['日期'] = tx_df['date']
-                df['收盘'] = tx_df['close']
-                df['涨跌幅'] = tx_df['close'].pct_change() * 100 # 换算百分比
-                df['成交量'] = tx_df['amount'] # 代替成交量计算量比
+            bs.login()
+            code = self._to_baostock_code(symbol)
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=200)).strftime('%Y-%m-%d')
 
-            # 【指标1：均线偏离与波动率】
+            rs = bs.query_history_k_data_plus(
+                code, "date,open,high,low,close,volume,amount",
+                start_date=start_date, end_date=end_date,
+                frequency="d", adjustflag="2"
+            )
+            df_raw = rs.get_data()
+            bs.logout()
+
+            if df_raw.empty:
+                raise ValueError("Baostock 返回空数据")
+
+            df = pd.DataFrame()
+            df['日期'] = df_raw['date']
+            df['收盘'] = df_raw['close'].astype(float)
+            df['成交量'] = df_raw['volume'].astype(float)
+            df['涨跌幅'] = df['收盘'].pct_change() * 100
+
             df['MA20'] = df['收盘'].rolling(20).mean()
             df['MA20_Bias'] = (df['收盘'] - df['MA20']) / df['MA20']
             df['Vol_5d'] = df['涨跌幅'].rolling(5).std()
-            
-            # 【指标2：MACD 趋势指标】
+
             ema12 = df['收盘'].ewm(span=12, adjust=False).mean()
             ema26 = df['收盘'].ewm(span=26, adjust=False).mean()
             df['MACD'] = ema12 - ema26
-            
-            # 【指标3：RSI (14) 强弱超买超卖指标】
+
             delta = df['收盘'].diff()
             gain = delta.clip(lower=0)
             loss = -delta.clip(upper=0)
             avg_gain = gain.ewm(com=14-1, min_periods=14).mean()
             avg_loss = loss.ewm(com=14-1, min_periods=14).mean()
-            rs = avg_gain / avg_loss
-            df['RSI_14'] = 100 - (100 / (1 + rs))
-            
-            # 【指标4：量能异动 (今日成交量 / 5日均量)】
+            rs_val = avg_gain / avg_loss
+            df['RSI_14'] = 100 - (100 / (1 + rs_val))
+
             df['Volume_MA5'] = df['成交量'].rolling(5).mean()
             df['Volume_Ratio'] = df['成交量'] / df['Volume_MA5']
-            
-            # 取最近一天有效数据
+
             latest = df.dropna().iloc[-1]
-            return {
-                "date": latest['日期'],
-                "close": latest['收盘'],
-                "pct_change": latest['涨跌幅'],
-                "ma20_bias": latest['MA20_Bias'],
-                "volatility": latest['Vol_5d'],
-                "macd": latest['MACD'],
-                "rsi_14": latest['RSI_14'],
-                "volume_ratio": latest['Volume_Ratio']
+            result = {
+                "date": str(latest['日期']),
+                "close": float(latest['收盘']),
+                "pct_change": float(latest['涨跌幅']),
+                "ma20_bias": float(latest['MA20_Bias']),
+                "volatility": float(latest['Vol_5d']),
+                "macd": float(latest['MACD']),
+                "rsi_14": float(latest['RSI_14']),
+                "volume_ratio": float(latest['Volume_Ratio'])
             }
+            self._set_cache(cache_key, result)
+            return result
         except Exception as e:
             print(f"获取行情失败: {e}")
+            try: bs.logout()
+            except: pass
             return None
+
+    def fetch_kline_range(self, symbol: str, days: int = 60) -> list:
+        cache_key = f"kline_{symbol}_{days}"
+        if cached := self._get_cache(cache_key): return cached
+
+        try:
+            bs.login()
+            code = self._to_baostock_code(symbol)
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=days + 30)).strftime('%Y-%m-%d')
+
+            rs = bs.query_history_k_data_plus(
+                code, "date,open,high,low,close,volume",
+                start_date=start_date, end_date=end_date,
+                frequency="d", adjustflag="2"
+            )
+            df_raw = rs.get_data()
+            bs.logout()
+
+            if df_raw.empty:
+                return []
+
+            kline = []
+            for _, row in df_raw.tail(days).iterrows():
+                kline.append({
+                    "date": row['date'],
+                    "open": float(row['open']),
+                    "high": float(row['high']),
+                    "low": float(row['low']),
+                    "close": float(row['close']),
+                    "volume": float(row['volume'])
+                })
+            self._set_cache(cache_key, kline)
+            return kline
+        except Exception as e:
+            print(f"获取K线数据失败: {e}")
+            try: bs.logout()
+            except: pass
+            return []
 
     def fetch_news(self, symbol: str) -> tuple:
         print("正在获取 [全球宏观政经快讯]...")
@@ -172,18 +238,19 @@ class AgenticQuant:
             return ["获取论坛情绪失败"]
 
 
-    def compile_and_predict(self, symbol: str):
+    def compile_and_predict(self, symbol: str) -> dict:
         profile = self.fetch_company_profile(symbol)
         quant = self.fetch_quant_status(symbol)
+
+        if quant is None:
+            return {“error”: “无法获取该股票量价数据，停止推演。”}
+
         macro_news, stock_news = self.fetch_news(symbol)
         retail_sentiment = self.fetch_retail_sentiment(symbol)
-        
-        if quant is None:
-            print("无法获取该股票量价数据，停止推演。")
-            return
+        kline_data = self.fetch_kline_range(symbol, days=60)
 
         prompt = f'''你是一位深谙政治经济学与行为金融学的顶尖A股量化游资操盘手。
-你需要结合资产当前的多维技术面状态、公司的基本业务性质、以及今日的宏观/个股新闻，对该股票进行全面的“排雷”和明天的“推演”。
+你需要结合资产当前的多维技术面状态、公司的基本业务性质、以及今日的宏观/个股新闻，对该股票进行全面的”排雷”和明天的”推演”。
 
 【研究标的档案】：
 - 股票代码：{symbol} ({profile['name']})
@@ -211,39 +278,52 @@ class AgenticQuant:
 请用专业投研的风格写一段分析报告：
 1. 宏观政策映射：结合该公司的【主营业务性质】，分析今日的宏观新闻是否会间接（或直接）影响该行业的政策预期或流动性。
 2. 多维共振与资金情绪解读：结合个股专属新闻和今日盘面的多个技术指标（量比、均线、RSI、MACD等），指出当前的涨跌是由什么驱动的，大资金是在进场抢筹还是在拉高出货，有没有隐藏的筹码雷区（获利盘踩踏或恐慌杀跌）。
-3. 散户心理与暗线跟踪：结合最新的【散户微观情绪与小道消息】，指出市场是否存在未被新闻披露的“小作文”驱动，或者是否存在“买预期卖现实”的踩踏风险。
+3. 散户心理与暗线跟踪：结合最新的【散户微观情绪与小道消息】，指出市场是否存在未被新闻披露的”小作文”驱动，或者是否存在”买预期卖现实”的踩踏风险。
 4. 明日博弈预判：综合给出你对明日该股票走势的最终短期推断结论（看涨 / 看跌 / 震荡），并用一句话给出操作建议。'''
 
-        print("\n\n================ AI 思考的大脑数据输入 ==================")
+        print(“\n\n================ AI 思考的大脑数据输入 ==================”)
         print(prompt)
-        print("=========================================================\n")
+        print(“=========================================================\n”)
 
-        print("🚀 正在请求大模型，利用该股票的性质、量价、环境综合推演，请等待...")
+        print(“🚀 正在请求大模型，利用该股票的性质、量价、环境综合推演，请等待...”)
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
-                    {"role": "system", "content": "你是一个结合A股打板和大宽客数据投研的顶尖量化分析师。风格要犀利、利用数据说话、简明干练。请注意：你的输出将直接发送到QQ，请务必使用纯文本格式，绝对不要使用任何 Markdown 语法（如加粗的**、标题的#等），请使用普通的换行和数字编号来进行排版。"},
-                    {"role": "user", "content": prompt}
+                    {“role”: “system”, “content”: “你是一个结合A股打板和大宽客数据投研的顶尖量化分析师。风格要犀利、利用数据说话、简明干练。”},
+                    {“role”: “user”, “content”: prompt}
                 ],
                 temperature=0.7,
             )
             report = response.choices[0].message.content
-            print("\n==================== 📈 AI 投研推演报告 📈 ====================")
+            print(“\n==================== 📈 AI 投研推演报告 📈 ====================”)
             print(report)
-            print("===============================================================\n")
-            return report
+            print(“===============================================================\n”)
         except Exception as e:
-            err_msg = f"调用大模型报错: {e}"
-            print(err_msg)
-            return err_msg
+            report = f”调用大模型报错: {e}”
+            print(report)
+
+        return {
+            “symbol”: symbol,
+            “name”: profile.get('name', ''),
+            “industry”: profile.get('industry', ''),
+            “business”: profile.get('business', ''),
+            “quote”: quant,
+            “kline_data”: kline_data,
+            “macro_news”: macro_news,
+            “stock_news”: stock_news,
+            “retail_sentiment”: retail_sentiment,
+            “report”: report
+        }
 
 if __name__ == "__main__":
     import os
     from dotenv import load_dotenv
     load_dotenv()
-    
+
     api_key = os.getenv("DEEPSEEK_API_KEY")
     agent = AgenticQuant(api_key=api_key)
-    
-    agent.compile_and_predict(symbol="002594")
+
+    result = agent.compile_and_predict(symbol="002594")
+    if "error" not in result:
+        print(result["report"])
