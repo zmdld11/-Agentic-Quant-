@@ -130,7 +130,8 @@ async function fetchKlineOnly(symbol, period) {
         if (resp.ok) {
             var data = await resp.json();
             klineRawData = data.kline_data;
-            renderAllCharts(data.kline_data);
+            var visible = data.display_bars || data.kline_data.length;
+            renderAllCharts(data.kline_data, visible);
         }
     } catch (e) {
         console.error('K线刷新失败:', e);
@@ -147,7 +148,9 @@ function renderResult(data) {
     renderQuoteCards(data.quote);
 
     klineRawData = data.kline_data || [];
-    renderAllCharts(klineRawData);
+    // K-line from analyze always returns 60 bars; show based on current period
+    var analyzeVisible = {"1m": 22, "3m": 60, "6m": 60, "1y": 60};
+    renderAllCharts(klineRawData, analyzeVisible[currentPeriod] || 60);
 
     renderReport(data.report);
 
@@ -180,14 +183,15 @@ function renderQuoteCards(quote) {
     }).join('');
 }
 
-function renderAllCharts(data) {
+function renderAllCharts(data, visible) {
     if (!data || data.length === 0) return;
     initCharts();
     if (!chartsReady) { console.error('ECharts not loaded'); return; }
-    renderKlineChart(data);
-    renderVolumeChart(data);
-    renderMACDChart(data);
-    renderRSIChart(data);
+    if (!visible) visible = data.length;
+    renderKlineChart(data, visible);
+    renderVolumeChart(data, visible);
+    renderMACDChart(data, visible);
+    renderRSIChart(data, visible);
 }
 
 function getChartColors() {
@@ -200,32 +204,46 @@ function getChartColors() {
     };
 }
 
-function renderKlineChart(data) {
-    var dates = data.map(function (d) { return d.date; });
-    var ohlc = data.map(function (d) { return [d.open, d.close, d.low, d.high]; });
-    var closes = data.map(function (d) { return d.close; });
+function renderKlineChart(data, visible) {
+    if (!visible) visible = data.length;
+    var sliced = data.slice(-visible);
+    var allDates = data.map(function (d) { return d.date; });
+    var allCloses = data.map(function (d) { return d.close; });
+
+    var dates = sliced.map(function (d) { return d.date; });
+    var ohlc = sliced.map(function (d) { return [d.open, d.close, d.low, d.high]; });
     var colors = getChartColors();
-    var ma5 = calcMA(closes, 5);
-    var ma10 = calcMA(closes, 10);
-    var ma20 = calcMA(closes, 20);
+    // Calculate MA on full data, slice display
+    var ma5 = calcMA(allCloses, 5).slice(-visible);
+    var ma10 = calcMA(allCloses, 10).slice(-visible);
+    var ma20 = calcMA(allCloses, 20).slice(-visible);
+    var ma5Full = calcMA(allCloses, 5);
+    var ma10Full = calcMA(allCloses, 10);
+    var ma20Full = calcMA(allCloses, 20);
+    // For MA display, use only visible portion
+    var showMa5 = ma5Full.slice(-visible);
+    var showMa10 = ma10Full.slice(-visible);
+    var showMa20 = ma20Full.slice(-visible);
 
     klineChart.setOption({
         tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-        grid: { left: '8%', right: '2%', top: '6%', bottom: '4%' },
-        xAxis: { type: 'category', data: dates, axisLabel: { color: colors.text, fontSize: 11 }, axisLine: { lineStyle: { color: colors.border } } },
+        grid: { left: '8%', right: '2%', top: '8%', bottom: '8%' },
+        xAxis: { type: 'category', data: dates, axisLabel: { color: colors.text, fontSize: 10, rotate: visible > 60 ? 45 : 0 }, axisLine: { lineStyle: { color: colors.border } } },
         yAxis: { type: 'value', scale: true, splitLine: { lineStyle: { color: colors.border, type: 'dashed' } }, axisLabel: { color: colors.text, fontSize: 11, formatter: function (v) { return v.toFixed(0); } } },
         series: [
             { name: 'K线', type: 'candlestick', data: ohlc, itemStyle: { color: colors.up, color0: colors.down, borderColor: colors.up, borderColor0: colors.down } },
-            { name: 'MA5', type: 'line', data: ma5, symbol: 'none', smooth: true, lineStyle: { color: '#f59e0b', width: 1 } },
-            { name: 'MA10', type: 'line', data: ma10, symbol: 'none', smooth: true, lineStyle: { color: '#8b5cf6', width: 1 } },
-            { name: 'MA20', type: 'line', data: ma20, symbol: 'none', smooth: true, lineStyle: { color: '#ec4899', width: 1 } }
+            { name: 'MA5', type: 'line', data: showMa5, symbol: 'none', smooth: true, lineStyle: { color: '#f59e0b', width: 1 } },
+            { name: 'MA10', type: 'line', data: showMa10, symbol: 'none', smooth: true, lineStyle: { color: '#8b5cf6', width: 1 } },
+            { name: 'MA20', type: 'line', data: showMa20, symbol: 'none', smooth: true, lineStyle: { color: '#ec4899', width: 1 } }
         ],
-        legend: { data: ['K线', 'MA5', 'MA10', 'MA20'], bottom: 0, textStyle: { color: colors.text } }
+        legend: { data: ['K线', 'MA5', 'MA10', 'MA20'], top: 0, textStyle: { color: colors.text, fontSize: 11 } }
     }, true);
 }
 
-function renderVolumeChart(data) {
-    var dates = data.map(function (d) { return d.date; });
+function renderVolumeChart(data, visible) {
+    if (!visible) visible = data.length;
+    var sliced = data.slice(-visible);
+    var dates = sliced.map(function (d) { return d.date; });
     var colors = getChartColors();
 
     volumeChart.setOption({
@@ -235,19 +253,24 @@ function renderVolumeChart(data) {
         yAxis: { type: 'value', splitLine: { lineStyle: { color: colors.border, type: 'dashed' } }, axisLabel: { color: colors.text, fontSize: 10, formatter: function (v) { return v > 1e8 ? (v / 1e8).toFixed(1) + '亿' : (v / 1e6).toFixed(0) + '万'; } } },
         series: [{
             name: '成交量', type: 'bar',
-            data: data.map(function (d) {
+            data: sliced.map(function (d) {
                 return { value: d.volume, itemStyle: { color: d.close >= d.open ? colors.up : colors.down, opacity: 0.7 } };
             })
         }]
     }, true);
 }
 
-function renderMACDChart(data) {
-    var dates = data.map(function (d) { return d.date; });
-    var closes = data.map(function (d) { return d.close; });
+function renderMACDChart(data, visible) {
+    if (!visible) visible = data.length;
+    var allDates = data.map(function (d) { return d.date; });
+    var allCloses = data.map(function (d) { return d.close; });
     var colors = getChartColors();
-    var result = calcMACD(closes);
-    var dif = result.dif, dea = result.dea, macd = result.macd;
+    // Calculate on full data for stability, display only last 'visible' bars
+    var result = calcMACD(allCloses);
+    var dif = result.dif.slice(-visible);
+    var dea = result.dea.slice(-visible);
+    var macd = result.macd.slice(-visible);
+    var dates = allDates.slice(-visible);
 
     macdChart.setOption({
         tooltip: { trigger: 'axis' },
@@ -258,16 +281,19 @@ function renderMACDChart(data) {
         series: [
             { name: 'DIF', type: 'line', data: dif, symbol: 'none', lineStyle: { color: '#3b82f6', width: 1.5 } },
             { name: 'DEA', type: 'line', data: dea, symbol: 'none', lineStyle: { color: '#f97316', width: 1.5 } },
-            { name: 'MACD', type: 'bar', data: macd.map(function (v) { return { value: v, itemStyle: { color: v >= 0 ? colors.up : colors.down, opacity: 0.7 } }; }) }
+            { name: 'MACD', type: 'bar', data: macd.map(function (v) { return { value: v, itemStyle: { color: (v != null && v >= 0) ? colors.up : colors.down, opacity: 0.7 } }; }) }
         ]
     }, true);
 }
 
-function renderRSIChart(data) {
-    var dates = data.map(function (d) { return d.date; });
-    var closes = data.map(function (d) { return d.close; });
+function renderRSIChart(data, visible) {
+    if (!visible) visible = data.length;
+    var allDates = data.map(function (d) { return d.date; });
+    var allCloses = data.map(function (d) { return d.close; });
     var colors = getChartColors();
-    var rsi = calcRSI(closes, 14);
+    // Calculate on full data, display only last 'visible' bars
+    var rsi = calcRSI(allCloses, 14).slice(-visible);
+    var dates = allDates.slice(-visible);
 
     rsiChart.setOption({
         tooltip: { trigger: 'axis' },

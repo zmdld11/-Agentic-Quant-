@@ -54,9 +54,10 @@ async def get_kline(code: str, period: str = "3m"):
     if not quant_engine:
         raise HTTPException(status_code=503, detail="引擎未初始化")
     days_map = {"1m": 22, "3m": 60, "6m": 120, "1y": 250}
-    days = days_map.get(period, 60)
-    kline = quant_engine.fetch_kline_range(code, days=days)
-    return {"symbol": code, "kline_data": kline, "count": len(kline)}
+    display_bars = days_map.get(period, 60)
+    # Always fetch 250 bars so MACD/RSI have enough history to calculate
+    kline = quant_engine.fetch_kline_range(code, days=250)
+    return {"symbol": code, "kline_data": kline, "count": len(kline), "display_bars": display_bars}
 
 
 @app.get("/")
