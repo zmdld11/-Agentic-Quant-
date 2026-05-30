@@ -46,25 +46,18 @@ class AgenticQuant:
 
         print(f"正在获取 [{symbol}] 的公司基本信息与行业属性...")
         try:
-            bs.login()
-            rs = bs.query_stock_basic(code=self._to_baostock_code(symbol))
-            data = rs.get_data()
-            bs.logout()
-
-            if not data.empty:
-                row = data.iloc[0]
+            df_info = ak.stock_profile_cninfo(symbol)
+            if not df_info.empty:
                 res = {
-                    "name": row['code_name'],
-                    "industry": row.get('industry', '未知') if 'industry' in data.columns else '未知',
-                    "business": row.get('business', '未知') if 'business' in data.columns else '未知',
-                    "brief": f"{row['code_name']}，上市日期: {row.get('ipoDate', 'N/A')}"
+                    "name": df_info['公司名称'].values[0],
+                    "industry": df_info['所属行业'].values[0],
+                    "business": df_info['主营业务'].values[0],
+                    "brief": df_info['机构简介'].values[0]
                 }
                 self._set_cache(cache_key, res)
                 return res
         except Exception as e:
             print(f"获取公司资料失败: {e}")
-            try: bs.logout()
-            except: pass
         return {"name": f"A股代码 {symbol}", "industry": "未知", "business": "未知", "brief": "缺少资料"}
 
     def fetch_quant_status(self, symbol: str) -> dict:

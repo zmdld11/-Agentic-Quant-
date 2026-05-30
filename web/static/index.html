@@ -5,9 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agentic Quant - 量化投研看板</title>
     <link rel="stylesheet" href="/static/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 </head>
 <body>
+    <!-- 启动加载画面 -->
+    <div id="splash" class="splash">
+        <div class="splash-content">
+            <div class="splash-logo">📊</div>
+            <h2>Agentic Quant</h2>
+            <p>量化投研看板加载中...</p>
+            <div class="splash-bar"><div class="splash-bar-fill"></div></div>
+        </div>
+    </div>
+
     <header class="header">
         <h1>📊 Agentic Quant 量化投研看板</h1>
         <button id="themeToggle" class="theme-btn" onclick="toggleTheme()" aria-label="切换主题">🌙</button>
@@ -49,6 +58,16 @@
         <div id="report" class="report hidden"></div>
         <div id="error" class="error hidden"></div>
     </main>
+
+    <!-- 历史记录侧边栏 -->
+    <aside id="historyPanel" class="history-panel">
+        <div class="history-tab">📋<br>历<br>史</div>
+        <div class="history-body">
+            <h3>近期查询</h3>
+            <div id="historyList" class="history-list"></div>
+            <button id="clearHistory" class="clear-btn" onclick="clearAllHistory()">清除全部</button>
+        </div>
+    </aside>
 
     <footer class="footer">
         <p>⚠️ 仅供学术研究与量化技术探讨，不构成任何投资建议。股市有风险，投资需谨慎。</p>
