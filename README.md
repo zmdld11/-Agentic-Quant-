@@ -1,78 +1,103 @@
-﻿<div align="center">
-  <h1>🤖 Agentic Quant</h1>
-  <p><b>基于大语言模型与政治经济学的A股单日量化投研系统</b></p>
+<div align="center">
+  <h1>📊 Agentic Quant</h1>
+  <p><b>基于大语言模型与政治经济学的 A 股量化投研看板</b></p>
   <p>
-    <img src="https://img.shields.io/badge/Python-3.13-blue.svg" alt="Python Version">
-    <img src="https://img.shields.io/badge/LLM-DeepSeek-deepblue.svg" alt="LLM Backing">
-    <img src="https://img.shields.io/badge/Data-AkShare-green.svg" alt="AkShare">
+    <img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python">
+    <img src="https://img.shields.io/badge/LLM-DeepSeek-blue.svg" alt="DeepSeek">
+    <img src="https://img.shields.io/badge/Data-Baostock-green.svg" alt="Baostock">
+    <img src="https://img.shields.io/badge/Frontend-ECharts-red.svg" alt="ECharts">
     <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
   </p>
 </div>
 
-<br/>
+## 项目简介
 
-## 📖 项目简介
+打通 **"个股基本面 + K线量价 + 宏观/个股新闻 + 散户情绪 + LLM 深度推演"** 的全链路量化投研系统。让 AI 像研究员一样，帮你做 A 股单日盯盘与推演报告。
 
-这是一个极具前沿思维的 **“大语言模型量化智能体 (LLM Agentic Quant)”**。
+**Web 看板**：输入 6 位 A 股代码，自动抓取数据、计算技术指标、调用 DeepSeek 生成次日走势研判。支持 K 线图、MACD/RSI/成交量副图、白/暗双主题。
 
-传统量化模型仅依赖 K线和技术指标进行硬卷，但在政策驱动和消息面变幻莫测的A股市场中常常失灵。本项目打通了 **“个股基本面档案 + 实时量价异动 + 宏观/个股新闻自动爬取 + LLM 深度政经逻辑推演”** 的全链路，让 AI 像顶尖私募研究员一样，帮你做A股单日盯盘与推演报告。
+## 架构
 
-## ✨ 核心特性
-
-- **数据获取引擎 (`akshare`)**：实时抓取任何输入A股的当天收盘价、技术指标偏离度、公司主营业务。
-- **动态新闻爬虫**：实时截获当天全球重大宏观政治事件 + 目标个股专属重大公告，作为资金面和政策面的基本底座。- **大数据多维指标引擎 (`pandas`)**：深度计算 K 线技术状态，包括均线偏离度(MA20_Bias)、资金量比(Volume Ratio)、MACD趋势强度、RSI_14多空动能，并对5日真实波动率进行测度，以全方位捕捉股价异动雷区。- **大语言模型思考大脑**：融合上述数字/文本，通过一套专业的“政治经济学”量化 Prompt，自动交由 DeepSeek / 通义千问等模型产生次日的走势推断与避雷警告。
-
-## 🛠️ 环境依赖
-
-本项目基于本地 Python 3.13 环境搭建。
-
-### 1. 克隆项目
-```bash
-git clone https://github.com/yourusername/Market-Quantification.git
-cd Market-Quantification
+```
+浏览器 ──▶ FastAPI (同一进程 serve 前端 + API)
+              ├─ /              → HTML 看板页面
+              ├─ POST /api/analyze  → AI 量化分析
+              ├─ GET  /api/kline    → K线数据
+              └─ GET  /api/health   → 健康检查
+                      │
+              AgenticQuant Engine
+              ├─ Baostock → K线/基本面
+              ├─ akshare  → 新闻/散户情绪
+              └─ DeepSeek → LLM 推理
 ```
 
-### 2. 创建并激活虚拟环境 (Windows)
-```powershell
-python -m venv venv
-.\venv\Scripts\activate
-```
+## 快速开始
 
-### 3. 安装依赖包
+### 1. 环境要求
+
+- Python 3.10+
+- Linux / macOS / Windows
+
+### 2. 安装
+
 ```bash
+git clone https://github.com/zmdld11/-Agentic-Quant-.git
+cd ./-Agentic-Quant-
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 4. 配置环境变量
-在项目根目录创建一个 `.env` 文件，并填入你的大模型 API 密钥（默认支持 DeepSeek OpenAI SDK 格式）：
-```env
-DEEPSEEK_API_KEY="sk-your-api-key-here"
-```
-
-## 🚀 如何使用
-
-我们已经将复杂的内部爬虫与推演全部封装在了主程序中！
-
-**执行以下命令启动交互式分析引擎：**
+### 3. 配置 API Key
 
 ```bash
-python main.py
+cp .env.example .env
+# 编辑 .env，填入你的 DeepSeek API Key
 ```
 
-执行后，按照控制台提示：
-1. **输入你想分析的任意 6 位A股代码**（例如茅台：`600519`，或 比亚迪：`002594`）。
-2. 系统会自动发爬虫去收集它的公司档案、今日最新K线状态以及有关它今天的所有新闻。
-3. 随后，大模型会生成一篇**犀利的次日投研推演报告**，判断它的涨跌逻辑和政治经济风险。
+### 4. 启动
 
-## 🧩 扩展与二次开发
+```bash
+bash start_web.sh
+# Windows: .venv\Scripts\python -m uvicorn web.app:app --host 0.0.0.0 --port 8000
+```
 
-- **更换大模型**：项目默认采用性价比最高的 DeepSeek-Chat，如果想更换厂商，直接修改 `src/models/agentic_quant.py` 初始化函数中的 `base_url` 即可。
-- **增加新因子**：我们预留了丰富的数据源抓取空间。你可以往 `AgenticQuant` 类中随时补充“北向资金”、“龙虎榜机构净买入”或“美联储加息预期”等更高级的特征供 LLM 推理。
+浏览器打开 `http://127.0.0.1:8000`，输入 A 股代码即可分析。
 
-## ⚠️ 免责声明
+### 5. 生产部署
 
-本项目仅供学术研究与量化技术探讨使用。AI 推演结果**不构成任何投资建议**。A股有风险，入市需谨慎。
+见 `markdown/DEPLOYMENT.md`（包含 systemd 开机自启、端口放行等）。
 
-## 📄 协议
+## 数据源
 
-本项目基于 [MIT License](LICENSE) 开源。
+| 数据类型 | 来源 | 说明 |
+|---------|------|------|
+| K线 (OHLCV) | Baostock | 免费免注册，全A股1990至今 |
+| 公司档案 | akshare | 巨潮资讯 |
+| 宏观新闻 | akshare | 新浪全球快讯 |
+| 个股新闻 | akshare | 东方财富 |
+| 散户情绪 | 东方财富股吧 | 近7天热帖 |
+
+## 技术栈
+
+| 层 | 技术 |
+|----|------|
+| 后端 | FastAPI + uvicorn |
+| 数据 | Baostock + akshare + pandas |
+| AI | DeepSeek (OpenAI SDK) |
+| 前端 | ECharts K线图 + 原生 JS/CSS |
+| 部署 | systemd + Nginx（可选） |
+
+## 扩展
+
+- **换大模型**：修改 `AgenticQuant` 初始化参数 `base_url`，兼容所有 OpenAI 格式接口
+- **加新因子**：在 `fetch_quant_status()` 中补充北向资金、龙虎榜等指标
+- **后台监控**：后续可在 FastAPI 上加 APScheduler 实现自选股定时预警
+
+## 免责声明
+
+本项目仅供学术研究与量化技术探讨。AI 推演结果**不构成任何投资建议**。股市有风险，投资需谨慎。
+
+## 协议
+
+[MIT License](LICENSE)
