@@ -69,6 +69,28 @@ body {
     letter-spacing: -0.01em;
 }
 
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.github-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    transition: all 0.2s;
+}
+
+.github-btn:hover {
+    color: var(--text);
+    background: var(--accent-light);
+}
+
 .theme-btn {
     background: var(--card-bg);
     border: 1px solid var(--border);
