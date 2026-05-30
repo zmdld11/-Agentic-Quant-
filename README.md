@@ -64,10 +64,6 @@ bash start_web.sh
 
 浏览器打开 `http://127.0.0.1:8000`，输入 A 股代码即可分析。
 
-### 5. 生产部署
-
-见 `markdown/DEPLOYMENT.md`（包含 systemd 开机自启、端口放行等）。
-
 ## 数据源
 
 | 数据类型 | 来源 | 说明 |
