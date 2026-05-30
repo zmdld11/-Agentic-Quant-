@@ -320,12 +320,13 @@ function renderReport(text) {
     var el = document.getElementById('report');
     var html = text
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/^---+$/gm, '<hr>')
+        .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
         .replace(/^### (.+)$/gm, '<h3>$1</h3>')
         .replace(/^## (.+)$/gm, '<h2>$1</h2>')
         .replace(/^# (.+)$/gm, '<h1>$1</h1>')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/^- (.+)$/gm, '<li>$1</li>')
-        .replace(/(\d+)\.\s(.+)/g, '<li>$2</li>')
         .replace(/\n{2,}/g, '</p><p>')
         .replace(/\n/g, '<br>');
 
