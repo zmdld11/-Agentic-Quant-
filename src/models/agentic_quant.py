@@ -82,10 +82,15 @@ class AgenticQuant:
             if df_raw.empty:
                 raise ValueError("Baostock 返回空数据")
 
+            # 过滤掉空值行（部分股票存在空字符串）
+            df_raw = df_raw[df_raw['close'] != ''].copy()
+            if df_raw.empty:
+                raise ValueError("Baostock 数据全部为空")
+
             df = pd.DataFrame()
             df['日期'] = df_raw['date']
             df['收盘'] = df_raw['close'].astype(float)
-            df['成交量'] = df_raw['volume'].astype(float)
+            df['成交量'] = df_raw['volume'].replace('', '0').astype(float)
             df['涨跌幅'] = df['收盘'].pct_change() * 100
 
             df['MA20'] = df['收盘'].rolling(20).mean()
@@ -146,6 +151,9 @@ class AgenticQuant:
 
             if df_raw.empty:
                 return []
+
+            # 过滤空值行
+            df_raw = df_raw[df_raw['close'] != '']
 
             kline = []
             for _, row in df_raw.tail(days).iterrows():

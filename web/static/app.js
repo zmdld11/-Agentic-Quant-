@@ -248,7 +248,7 @@ function renderVolumeChart(data, visible) {
 
     volumeChart.setOption({
         tooltip: { trigger: 'axis' },
-        grid: { left: '8%', right: '2%', top: '8%', bottom: '4%' },
+        grid: { left: '12%', right: '4%', top: '8%', bottom: '10%' },
         xAxis: { type: 'category', data: dates, axisLabel: { color: colors.text, fontSize: 10 }, axisLine: { lineStyle: { color: colors.border } } },
         yAxis: { type: 'value', splitLine: { lineStyle: { color: colors.border, type: 'dashed' } }, axisLabel: { color: colors.text, fontSize: 10, formatter: function (v) { return v > 1e8 ? (v / 1e8).toFixed(1) + '亿' : (v / 1e6).toFixed(0) + '万'; } } },
         series: [{
@@ -274,7 +274,7 @@ function renderMACDChart(data, visible) {
 
     macdChart.setOption({
         tooltip: { trigger: 'axis' },
-        grid: { left: '8%', right: '2%', top: '8%', bottom: '18%' },
+        grid: { left: '12%', right: '4%', top: '8%', bottom: '18%' },
         legend: { data: ['DIF', 'DEA', 'MACD'], bottom: 0, textStyle: { color: colors.text, fontSize: 11 } },
         xAxis: { type: 'category', data: dates, axisLabel: { color: colors.text, fontSize: 10 }, axisLine: { lineStyle: { color: colors.border } } },
         yAxis: { type: 'value', splitLine: { lineStyle: { color: colors.border, type: 'dashed' } }, axisLabel: { color: colors.text, fontSize: 10, formatter: function (v) { return v.toFixed(2); } } },
@@ -297,7 +297,7 @@ function renderRSIChart(data, visible) {
 
     rsiChart.setOption({
         tooltip: { trigger: 'axis' },
-        grid: { left: '8%', right: '2%', top: '8%', bottom: '4%' },
+        grid: { left: '12%', right: '8%', top: '8%', bottom: '10%' },
         xAxis: { type: 'category', data: dates, axisLabel: { color: colors.text, fontSize: 10 }, axisLine: { lineStyle: { color: colors.border } } },
         yAxis: { type: 'value', min: 0, max: 100, splitLine: { lineStyle: { color: colors.border, type: 'dashed' } }, axisLabel: { color: colors.text, fontSize: 10 } },
         series: [{
@@ -318,7 +318,108 @@ function renderRSIChart(data, visible) {
 function renderReport(text) {
     if (!text) return;
     var el = document.getElementById('report');
-    var html = text
+
+    // Split into blocks: tables vs text
+    var lines = text.split('\n');
+    var blocks = [];
+    var inTable = false;
+    var tableLines = [];
+
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var isTableLine = /^\|.+\|$/.test(line.trim()) && !/^[-|]+$/.test(line.trim());
+        var isSepLine = /^\|[-|: ]+\|$/.test(line.trim());
+
+        if (isTableLine || isSepLine) {
+            if (!inTable) {
+                // flush previous text block
+                if (i > 0 && tableLines.length === 0) {
+                    var prevText = lines.slice(blocks.length > 0 ? blocks[blocks.length-1].endLine+1 : 0, i).join('\n');
+                    if (prevText.trim()) blocks.push({ type: 'text', content: prevText });
+                }
+                inTable = true;
+            }
+            if (isTableLine) tableLines.push(line.trim());
+        } else {
+            if (inTable) {
+                blocks.push({ type: 'table', rows: tableLines });
+                tableLines = [];
+                inTable = false;
+                blocks.push({ type: 'text', startLine: i });
+            }
+        }
+    }
+    // flush remaining
+    if (inTable && tableLines.length > 0) {
+        blocks.push({ type: 'table', rows: tableLines });
+    }
+
+    // Build HTML
+    if (blocks.length === 0) {
+        // No table blocks, process entire text normally
+        blocks.push({ type: 'text', content: text });
+    } else {
+        // Add trailing text after last block
+        var lastBlock = blocks[blocks.length - 1];
+        var lastIdx = -1;
+        for (var b = blocks.length - 1; b >= 0; b--) {
+            if (blocks[b].type === 'text' && blocks[b].startLine !== undefined) {
+                lastIdx = blocks[b].startLine; break;
+            }
+        }
+        // Build text content for each text block
+        var prevEnd = -1;
+        var newBlocks = [];
+        for (var b = 0; b < blocks.length; b++) {
+            if (blocks[b].type === 'text' && blocks[b].startLine !== undefined) {
+                var start = blocks[b].startLine;
+                var end = (b + 1 < blocks.length && blocks[b+1].type === 'table') ? lines.length : lines.length;
+                // find end of this text block
+                var tblStart = lines.length;
+                for (var c = b + 1; c < blocks.length; c++) {
+                    if (blocks[c].type === 'table') { tblStart = lines.indexOf(blocks[c].rows[0].replace(/^\|/, '').trim()); break; }
+                }
+                var content = lines.slice(start, tblStart < lines.length ? lines.findIndex(function(l, idx) { return idx >= start && /^\|.+\|$/.test(l.trim()); }) : lines.length).join('\n');
+                if (content.trim()) { newBlocks.push({ type: 'text', content: content }); }
+            } else if (blocks[b].type === 'table') {
+                newBlocks.push(blocks[b]);
+            }
+        }
+        blocks = newBlocks;
+        if (blocks.length === 0) blocks = [{ type: 'text', content: text }];
+    }
+
+    // Ensure text blocks before/after tables are captured
+    // Simpler approach: just convert tables inline, then process text
+    var processed = text;
+    // Replace table blocks with placeholders
+    var tableRegex = /((?:^\|(?:[^|\n]+)\|.+\n)+)/gm;
+    var tables = [];
+    processed = processed.replace(tableRegex, function (match) {
+        var rows = match.trim().split('\n');
+        // Filter out separator lines
+        rows = rows.filter(function (r) { return !/^[\s|:-]+$/.test(r); });
+        if (rows.length === 0) return '';
+        var html = '<table><thead><tr>';
+        var headerCells = rows[0].split('|').filter(function (c) { return c.trim(); });
+        for (var h = 0; h < headerCells.length; h++) {
+            html += '<th>' + headerCells[h].trim() + '</th>';
+        }
+        html += '</tr></thead><tbody>';
+        for (var r = 1; r < rows.length; r++) {
+            var cells = rows[r].split('|').filter(function (c) { return c.trim(); });
+            html += '<tr>';
+            for (var c = 0; c < cells.length; c++) {
+                html += '<td>' + cells[c].trim() + '</td>';
+            }
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+        tables.push(html);
+        return '\n<!--TABLE' + (tables.length - 1) + '-->\n';
+    });
+
+    var html = processed
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/^---+$/gm, '<hr>')
         .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
@@ -333,6 +434,11 @@ function renderReport(text) {
     html = '<p>' + html + '</p>';
     html = html.replace(/<li>[\s\S]*?<\/li>/g, function (m) { return '<ul>' + m + '</ul>'; });
     html = html.replace(/<\/ul>\s*<ul>/g, '');
+
+    // Restore table placeholders
+    for (var t = 0; t < tables.length; t++) {
+        html = html.replace('&lt;!--TABLE' + t + '--&gt;', tables[t]);
+    }
 
     el.innerHTML = html;
     el.classList.remove('hidden');
