@@ -388,9 +388,9 @@ body {
 /* ── History Sidebar ─────────────────────────── */
 .history-panel {
     position: fixed;
-    top: 52px;
+    top: 70px;
     right: 0;
-    height: calc(100vh - 52px);
+    height: calc(100vh - 70px);
     z-index: 200;
     display: flex;
     transform: translateX(290px);
@@ -401,7 +401,7 @@ body {
 
 .history-tab {
     width: 36px;
-    min-height: calc(100vh - 52px);
+    min-height: calc(100vh - 70px);
     background: var(--card-bg);
     border-left: 1px solid var(--border);
     display: flex;
@@ -422,7 +422,7 @@ body {
 
 .history-body {
     width: 290px;
-    min-height: calc(100vh - 52px);
+    min-height: calc(100vh - 70px);
     background: var(--card-bg);
     border-left: 1px solid var(--border);
     padding: 16px;
