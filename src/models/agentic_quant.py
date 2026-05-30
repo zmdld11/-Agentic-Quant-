@@ -11,7 +11,7 @@ class AgenticQuant:
     可以接受任意A股代码，自动获取该公司主营业务、量价特征、个股新闻以及全球宏观快讯。
     加入内存级缓存机制，防恶意刷单导致IP被封。
     '''
-    def __init__(self, api_key="your_api_key_here", base_url="https://api.deepseek.com/v1", model_name="deepseek-v4-flash"):
+    def __init__(self, api_key="your_api_key_here", base_url="https://api.deepseek.com", model_name="deepseek-v4-flash"):
         self.api_key = api_key
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
@@ -287,6 +287,7 @@ class AgenticQuant:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
+                timeout=60,
             )
             report = response.choices[0].message.content
             print("\n==================== AI 投研推演报告 ====================")
