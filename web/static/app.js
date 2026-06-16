@@ -1,69 +1,74 @@
 // ── Bootstrap ───────────────────────────────────────
 (function bootstrap() {
-    // theme can apply immediately
     var saved = localStorage.getItem('quant-theme');
     var prefers = window.matchMedia('(prefers-color-scheme: dark)').matches;
     applyTheme(saved || (prefers ? 'dark' : 'light'));
-
-    // async load ECharts then hide splash
     var script = document.createElement('script');
     script.src = 'https://cdn.bootcdn.net/ajax/libs/echarts/5.5.0/echarts.min.js';
     script.onload = function () {
         var splash = document.getElementById('splash');
         if (splash) splash.classList.add('done');
-        // remove splash from DOM after fade
         setTimeout(function () { if (splash) splash.remove(); }, 600);
         renderHistoryList();
     };
     script.onerror = function () {
         var splash = document.getElementById('splash');
-        if (splash) {
-            splash.querySelector('p').textContent = 'CDN 加载失败，请刷新重试';
-            splash.querySelector('.splash-bar-fill').style.animation = 'none';
-            splash.querySelector('.splash-bar-fill').style.width = '100%';
-        }
+        if (splash) { splash.querySelector('p').textContent = 'CDN 加载失败，请刷新重试'; }
     };
     document.head.appendChild(script);
 })();
 
 // ── State ────────────────────────────────────────────
+var activeTab = 'home';
+var singleState = 'init'; // init | loaded
 var currentSymbol = '';
 var currentPeriod = '3m';
 var klineRawData = [];
+var newsDateOffset = 0;
 
-// ── ECharts (lazy init) ──────────────────────────────
+// ── ECharts ──────────────────────────────────────────
 var klineChart, volumeChart, macdChart, rsiChart;
+var overlayChart, scatterChart;
 var chartsReady = false;
 
 function initCharts() {
     if (chartsReady) return;
     if (typeof echarts === 'undefined') return;
-    var klineEl = document.getElementById('klineChart');
-    if (!klineEl) return;
-    klineChart = echarts.init(klineEl);
-    volumeChart = echarts.init(document.getElementById('volumeChart'));
-    macdChart = echarts.init(document.getElementById('macdChart'));
-    rsiChart = echarts.init(document.getElementById('rsiChart'));
+    var containers = {
+        kline: document.getElementById('klineChart'),
+        volume: document.getElementById('volumeChart'),
+        macd: document.getElementById('macdChart'),
+        rsi: document.getElementById('rsiChart'),
+        overlay: document.getElementById('overlayChart'),
+        scatter: document.getElementById('scatterChart')
+    };
+    // Single-stock charts (init only when visible)
+    if (containers.kline && containers.kline.offsetParent) {
+        klineChart = echarts.init(containers.kline);
+        volumeChart = echarts.init(containers.volume);
+        macdChart = echarts.init(containers.macd);
+        rsiChart = echarts.init(containers.rsi);
+    }
+    // Dual charts
+    if (containers.overlay && containers.overlay.offsetParent) {
+        overlayChart = echarts.init(containers.overlay);
+        scatterChart = echarts.init(containers.scatter);
+    }
     chartsReady = true;
 }
 
 function resizeAllCharts() {
-    if (!chartsReady) return;
-    klineChart.resize();
-    volumeChart.resize();
-    macdChart.resize();
-    rsiChart.resize();
+    [klineChart, volumeChart, macdChart, rsiChart, overlayChart, scatterChart].forEach(function (c) {
+        if (c) c.resize();
+    });
 }
-
 window.addEventListener('resize', resizeAllCharts);
 
 // ── Theme ────────────────────────────────────────────
-
 function toggleTheme() {
     var current = document.documentElement.getAttribute('data-theme');
     applyTheme(current === 'dark' ? 'light' : 'dark');
 }
-
 function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     var btn = document.getElementById('themeToggle');
@@ -71,6 +76,71 @@ function applyTheme(theme) {
     localStorage.setItem('quant-theme', theme);
     resizeAllCharts();
 }
+
+// ── Tab / Page Navigation ────────────────────────────
+function goHome() { switchTab('home'); }
+var singleResultShown = false;
+function switchTab(tab) {
+    activeTab = tab;
+    var header = document.getElementById('appHeader');
+    ['Home', 'Single', 'Dual', 'News'].forEach(function (t) {
+        var el = document.getElementById('page' + t);
+        if (el) el.classList.toggle('hidden', t.toLowerCase() !== tab);
+    });
+    if (tab === 'home') {
+        if (header) header.classList.add('hidden');
+    } else {
+        if (header) header.classList.remove('hidden');
+        document.querySelectorAll('.tab-btn').forEach(function (b) {
+            b.classList.toggle('active', b.dataset.tab === tab);
+        });
+    }
+    if (tab === 'news') loadNews();
+    if (tab === 'dual') { chartsReady = false; }
+    if (tab === 'single' && singleState === 'init') resetSingleInit();
+    resizeAllCharts();
+}
+
+// ── Tab button clicks ────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { switchTab(this.dataset.tab); });
+});
+
+// ── Single: reset ────────────────────────────────────
+function resetSingleInit() {
+    singleState = 'init';
+    var init = document.getElementById('singleInit');
+    var result = document.getElementById('singleResult');
+    if (init) init.classList.remove('done');
+    if (result) result.classList.add('hidden');
+    document.getElementById('searchError').classList.add('hidden');
+    document.getElementById('symbolInput').value = '';
+    document.getElementById('symbolInput2').value = '';
+    hideError();
+    hideReport();
+    singleResultShown = false;
+}
+
+// ── Single: search animation ─────────────────────────
+function showSingleResult() {
+    if (singleResultShown) return;
+    singleResultShown = true;
+    var init = document.getElementById('singleInit');
+    var result = document.getElementById('singleResult');
+    if (init) init.classList.add('done');
+    if (result) result.classList.remove('hidden');
+    singleState = 'loaded';
+}
+
+// ── Enter key ────────────────────────────────────────
+var inputEl = document.getElementById('symbolInput');
+if (inputEl) inputEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') doAnalyze(); });
+var inputEl2 = document.getElementById('symbolInput2');
+if (inputEl2) inputEl2.addEventListener('keydown', function (e) { if (e.key === 'Enter') doAnalyze(); });
+var dualA = document.getElementById('dualInputA');
+if (dualA) dualA.addEventListener('keydown', function (e) { if (e.key === 'Enter') doDualSync(); });
+var dualB = document.getElementById('dualInputB');
+if (dualB) dualB.addEventListener('keydown', function (e) { if (e.key === 'Enter') doDualSync(); });
 
 // ── Period buttons ───────────────────────────────────
 document.querySelectorAll('.period-btn').forEach(function (btn) {
@@ -82,46 +152,38 @@ document.querySelectorAll('.period-btn').forEach(function (btn) {
     });
 });
 
-// ── Enter key ────────────────────────────────────────
-var inputEl = document.getElementById('symbolInput');
-if (inputEl) {
-    inputEl.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') doAnalyze();
-    });
-}
-
-// ── API calls ────────────────────────────────────────
+// ── Do Analyze ───────────────────────────────────────
 async function doAnalyze() {
-    var symbol = document.getElementById('symbolInput').value.trim();
+    var inp = singleState === 'init' ? document.getElementById('symbolInput') : document.getElementById('symbolInput2');
+    if (!inp) return;
+    var symbol = inp.value.trim();
     if (!symbol || symbol.length !== 6 || !/^\d{6}$/.test(symbol)) {
         showError('请输入6位数字A股代码');
         return;
     }
-
     currentSymbol = symbol;
     showLoading(true);
     hideError();
     hideReport();
-
     try {
         var resp = await fetch('/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ symbol: symbol })
         });
-
-        if (!resp.ok) {
-            var err = await resp.json();
-            throw new Error(err.detail || '请求失败');
-        }
-
+        if (!resp.ok) { var err = await resp.json(); throw new Error(err.detail || '请求失败'); }
         var data = await resp.json();
+        showSingleResult();
         renderResult(data);
     } catch (e) {
-        showError(e.message);
-    } finally {
-        showLoading(false);
-    }
+        if (singleState === 'init') {
+            var errEl = document.getElementById('searchError');
+            errEl.textContent = e.message;
+            errEl.classList.remove('hidden');
+        } else {
+            showError(e.message);
+        }
+    } finally { showLoading(false); }
 }
 
 async function fetchKlineOnly(symbol, period) {
@@ -133,293 +195,243 @@ async function fetchKlineOnly(symbol, period) {
             var visible = data.display_bars || data.kline_data.length;
             renderAllCharts(data.kline_data, visible);
         }
-    } catch (e) {
-        console.error('K线刷新失败:', e);
-    }
+    } catch (e) { console.error(e); }
 }
 
-// ── Render ───────────────────────────────────────────
+// ── Render Single Result ─────────────────────────────
 function renderResult(data) {
     document.getElementById('stockName').textContent = data.name || data.symbol;
     document.getElementById('stockIndustry').textContent = '行业: ' + (data.industry || '未知');
     document.getElementById('stockBusiness').textContent = '主营: ' + (data.business || '未知');
     document.getElementById('stockInfo').classList.remove('hidden');
-
     renderQuoteCards(data.quote);
-
     klineRawData = data.kline_data || [];
-    // K-line from analyze always returns 60 bars; show based on current period
     var analyzeVisible = {"1m": 22, "3m": 60, "6m": 60, "1y": 60};
     renderAllCharts(klineRawData, analyzeVisible[currentPeriod] || 60);
-
     renderReport(data.report);
-
     saveToHistory(data);
-
     document.getElementById('klineChart').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function renderQuoteCards(quote) {
     if (!quote) return;
-    var container = document.getElementById('quoteCards');
-    container.classList.remove('hidden');
-
+    var c = document.getElementById('quoteCards');
+    c.classList.remove('hidden');
     var pct = quote.pct_change;
-    var pctCls = pct > 0 ? 'up' : pct < 0 ? 'down' : '';
-
+    var cls = pct > 0 ? 'up' : pct < 0 ? 'down' : '';
     var items = [
-        { label: '收盘价', value: quote.close.toFixed(2) },
-        { label: '涨跌幅', value: (pct > 0 ? '+' : '') + pct.toFixed(2) + '%', cls: pctCls },
-        { label: '量比', value: quote.volume_ratio.toFixed(2) },
-        { label: 'RSI(14)', value: quote.rsi_14.toFixed(1) },
-        { label: 'MACD', value: quote.macd.toFixed(3) },
-        { label: '波动(5日)', value: quote.volatility.toFixed(2) + '%' },
-        { label: 'MA20偏离', value: (quote.ma20_bias * 100).toFixed(2) + '%' },
-        { label: '数据日期', value: quote.date }
+        { l: '收盘价', v: quote.close.toFixed(2) },
+        { l: '涨跌幅', v: (pct > 0 ? '+' : '') + pct.toFixed(2) + '%', c: cls },
+        { l: '量比', v: quote.volume_ratio.toFixed(2) },
+        { l: 'RSI(14)', v: quote.rsi_14.toFixed(1) },
+        { l: 'MACD', v: quote.macd.toFixed(3) },
+        { l: '波动(5日)', v: quote.volatility.toFixed(2) + '%' },
+        { l: 'MA20偏离', v: (quote.ma20_bias * 100).toFixed(2) + '%' },
+        { l: '数据日期', v: quote.date }
     ];
-
-    container.innerHTML = items.map(function (i) {
-        return '<div class="quote-card"><div class="label">' + i.label + '</div><div class="value ' + (i.cls || '') + '">' + i.value + '</div></div>';
+    c.innerHTML = items.map(function (i) {
+        return '<div class="quote-card"><div class="label">' + i.l + '</div><div class="value ' + (i.c || '') + '">' + i.v + '</div></div>';
     }).join('');
 }
 
+// ── Render Charts ────────────────────────────────────
 function renderAllCharts(data, visible) {
     if (!data || data.length === 0) return;
     initCharts();
-    if (!chartsReady) { console.error('ECharts not loaded'); return; }
+    if (!chartsReady || !klineChart) return;
     if (!visible) visible = data.length;
     renderKlineChart(data, visible);
     renderVolumeChart(data, visible);
     renderMACDChart(data, visible);
     renderRSIChart(data, visible);
 }
-
-function getChartColors() {
-    var style = getComputedStyle(document.documentElement);
-    return {
-        up: style.getPropertyValue('--up-color').trim() || '#dc2626',
-        down: style.getPropertyValue('--down-color').trim() || '#16a34a',
-        text: style.getPropertyValue('--text-secondary').trim() || '#999',
-        border: style.getPropertyValue('--border').trim() || '#e5e7eb'
-    };
+function getCC() {
+    var s = getComputedStyle(document.documentElement);
+    return { up: s.getPropertyValue('--up-color').trim() || '#dc2626', down: s.getPropertyValue('--down-color').trim() || '#16a34a', text: s.getPropertyValue('--text-secondary').trim() || '#999', border: s.getPropertyValue('--border').trim() || '#e5e7eb' };
 }
-
 function renderKlineChart(data, visible) {
-    if (!visible) visible = data.length;
     var sliced = data.slice(-visible);
-    var allDates = data.map(function (d) { return d.date; });
     var allCloses = data.map(function (d) { return d.close; });
-
     var dates = sliced.map(function (d) { return d.date; });
     var ohlc = sliced.map(function (d) { return [d.open, d.close, d.low, d.high]; });
-    var colors = getChartColors();
-    // Calculate MA on full data, slice display
-    var ma5 = calcMA(allCloses, 5).slice(-visible);
-    var ma10 = calcMA(allCloses, 10).slice(-visible);
-    var ma20 = calcMA(allCloses, 20).slice(-visible);
-    var ma5Full = calcMA(allCloses, 5);
-    var ma10Full = calcMA(allCloses, 10);
-    var ma20Full = calcMA(allCloses, 20);
-    // For MA display, use only visible portion
-    var showMa5 = ma5Full.slice(-visible);
-    var showMa10 = ma10Full.slice(-visible);
-    var showMa20 = ma20Full.slice(-visible);
-
+    var c = getCC();
+    var showMa5 = calcMA(allCloses, 5).slice(-visible);
+    var showMa10 = calcMA(allCloses, 10).slice(-visible);
+    var showMa20 = calcMA(allCloses, 20).slice(-visible);
     klineChart.setOption({
         tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
         grid: { left: '8%', right: '2%', top: '8%', bottom: '8%' },
-        xAxis: { type: 'category', data: dates, axisLabel: { color: colors.text, fontSize: 10, rotate: visible > 60 ? 45 : 0 }, axisLine: { lineStyle: { color: colors.border } } },
-        yAxis: { type: 'value', scale: true, splitLine: { lineStyle: { color: colors.border, type: 'dashed' } }, axisLabel: { color: colors.text, fontSize: 11, formatter: function (v) { return v.toFixed(0); } } },
+        xAxis: { type: 'category', data: dates, axisLabel: { color: c.text, fontSize: 10, rotate: visible > 60 ? 45 : 0 } },
+        yAxis: { type: 'value', scale: true, splitLine: { lineStyle: { color: c.border, type: 'dashed' } }, axisLabel: { color: c.text, fontSize: 11, formatter: function (v) { return v.toFixed(0); } } },
         series: [
-            { name: 'K线', type: 'candlestick', data: ohlc, itemStyle: { color: colors.up, color0: colors.down, borderColor: colors.up, borderColor0: colors.down } },
+            { name: 'K线', type: 'candlestick', data: ohlc, itemStyle: { color: c.up, color0: c.down, borderColor: c.up, borderColor0: c.down } },
             { name: 'MA5', type: 'line', data: showMa5, symbol: 'none', smooth: true, lineStyle: { color: '#f59e0b', width: 1 } },
             { name: 'MA10', type: 'line', data: showMa10, symbol: 'none', smooth: true, lineStyle: { color: '#8b5cf6', width: 1 } },
             { name: 'MA20', type: 'line', data: showMa20, symbol: 'none', smooth: true, lineStyle: { color: '#ec4899', width: 1 } }
         ],
-        legend: { data: ['K线', 'MA5', 'MA10', 'MA20'], top: 0, textStyle: { color: colors.text, fontSize: 11 } }
+        legend: { data: ['K线', 'MA5', 'MA10', 'MA20'], top: 0, textStyle: { color: c.text, fontSize: 11 } }
     }, true);
 }
-
 function renderVolumeChart(data, visible) {
-    if (!visible) visible = data.length;
     var sliced = data.slice(-visible);
     var dates = sliced.map(function (d) { return d.date; });
-    var colors = getChartColors();
-
+    var c = getCC();
     volumeChart.setOption({
         tooltip: { trigger: 'axis' },
-        grid: { left: '12%', right: '4%', top: '8%', bottom: '10%' },
-        xAxis: { type: 'category', data: dates, axisLabel: { color: colors.text, fontSize: 10 }, axisLine: { lineStyle: { color: colors.border } } },
-        yAxis: { type: 'value', splitLine: { lineStyle: { color: colors.border, type: 'dashed' } }, axisLabel: { color: colors.text, fontSize: 10, formatter: function (v) { return v > 1e8 ? (v / 1e8).toFixed(1) + '亿' : (v / 1e6).toFixed(0) + '万'; } } },
-        series: [{
-            name: '成交量', type: 'bar',
-            data: sliced.map(function (d) {
-                return { value: d.volume, itemStyle: { color: d.close >= d.open ? colors.up : colors.down, opacity: 0.7 } };
-            })
-        }]
+        grid: { left: '8%', right: '2%', top: '8%', bottom: '4%' },
+        xAxis: { type: 'category', data: dates, axisLabel: { color: c.text, fontSize: 10 } },
+        yAxis: { type: 'value', splitLine: { lineStyle: { color: c.border, type: 'dashed' } }, axisLabel: { color: c.text, fontSize: 10, formatter: function (v) { return v > 1e8 ? (v / 1e8).toFixed(1) + '亿' : (v / 1e6).toFixed(0) + '万'; } } },
+        series: [{ name: '成交量', type: 'bar', data: sliced.map(function (d) { return { value: d.volume, itemStyle: { color: d.close >= d.open ? c.up : c.down, opacity: 0.7 } }; }) }]
     }, true);
 }
-
 function renderMACDChart(data, visible) {
-    if (!visible) visible = data.length;
     var allDates = data.map(function (d) { return d.date; });
     var allCloses = data.map(function (d) { return d.close; });
-    var colors = getChartColors();
-    // Calculate on full data for stability, display only last 'visible' bars
-    var result = calcMACD(allCloses);
-    var dif = result.dif.slice(-visible);
-    var dea = result.dea.slice(-visible);
-    var macd = result.macd.slice(-visible);
+    var c = getCC();
+    var r = calcMACD(allCloses);
+    var dif = r.dif.slice(-visible), dea = r.dea.slice(-visible), macd = r.macd.slice(-visible);
     var dates = allDates.slice(-visible);
-
     macdChart.setOption({
         tooltip: { trigger: 'axis' },
-        grid: { left: '12%', right: '4%', top: '8%', bottom: '18%' },
-        legend: { data: ['DIF', 'DEA', 'MACD'], bottom: 0, textStyle: { color: colors.text, fontSize: 11 } },
-        xAxis: { type: 'category', data: dates, axisLabel: { color: colors.text, fontSize: 10 }, axisLine: { lineStyle: { color: colors.border } } },
-        yAxis: { type: 'value', splitLine: { lineStyle: { color: colors.border, type: 'dashed' } }, axisLabel: { color: colors.text, fontSize: 10, formatter: function (v) { return v.toFixed(2); } } },
+        grid: { left: '8%', right: '2%', top: '8%', bottom: '18%' },
+        legend: { data: ['DIF', 'DEA', 'MACD'], bottom: 0, textStyle: { color: c.text, fontSize: 11 } },
+        xAxis: { type: 'category', data: dates, axisLabel: { color: c.text, fontSize: 10 } },
+        yAxis: { type: 'value', splitLine: { lineStyle: { color: c.border, type: 'dashed' } }, axisLabel: { color: c.text, fontSize: 10, formatter: function (v) { return v.toFixed(2); } } },
         series: [
             { name: 'DIF', type: 'line', data: dif, symbol: 'none', lineStyle: { color: '#3b82f6', width: 1.5 } },
             { name: 'DEA', type: 'line', data: dea, symbol: 'none', lineStyle: { color: '#f97316', width: 1.5 } },
-            { name: 'MACD', type: 'bar', data: macd.map(function (v) { return { value: v, itemStyle: { color: (v != null && v >= 0) ? colors.up : colors.down, opacity: 0.7 } }; }) }
+            { name: 'MACD', type: 'bar', data: macd.map(function (v) { return { value: v, itemStyle: { color: (v != null && v >= 0) ? c.up : c.down, opacity: 0.7 } }; }) }
         ]
     }, true);
 }
-
 function renderRSIChart(data, visible) {
-    if (!visible) visible = data.length;
     var allDates = data.map(function (d) { return d.date; });
     var allCloses = data.map(function (d) { return d.close; });
-    var colors = getChartColors();
-    // Calculate on full data, display only last 'visible' bars
+    var c = getCC();
     var rsi = calcRSI(allCloses, 14).slice(-visible);
     var dates = allDates.slice(-visible);
-
     rsiChart.setOption({
         tooltip: { trigger: 'axis' },
-        grid: { left: '12%', right: '8%', top: '8%', bottom: '10%' },
-        xAxis: { type: 'category', data: dates, axisLabel: { color: colors.text, fontSize: 10 }, axisLine: { lineStyle: { color: colors.border } } },
-        yAxis: { type: 'value', min: 0, max: 100, splitLine: { lineStyle: { color: colors.border, type: 'dashed' } }, axisLabel: { color: colors.text, fontSize: 10 } },
+        grid: { left: '8%', right: '2%', top: '8%', bottom: '4%' },
+        xAxis: { type: 'category', data: dates, axisLabel: { color: c.text, fontSize: 10 } },
+        yAxis: { type: 'value', min: 0, max: 100, splitLine: { lineStyle: { color: c.border, type: 'dashed' } }, axisLabel: { color: c.text, fontSize: 10 } },
         series: [{
-            name: 'RSI(14)', type: 'line', data: rsi, symbol: 'none',
-            lineStyle: { color: '#a855f7', width: 1.5 },
-            markLine: {
-                silent: true, symbol: 'none',
-                lineStyle: { type: 'dashed', width: 1 },
-                data: [
-                    { yAxis: 70, label: { formatter: '70', color: colors.text, fontSize: 10 }, lineStyle: { color: '#f97316' } },
-                    { yAxis: 30, label: { formatter: '30', color: colors.text, fontSize: 10 }, lineStyle: { color: '#3b82f6' } }
-                ]
-            }
+            name: 'RSI(14)', type: 'line', data: rsi, symbol: 'none', lineStyle: { color: '#a855f7', width: 1.5 },
+            markLine: { silent: true, symbol: 'none', lineStyle: { type: 'dashed', width: 1 }, data: [{ yAxis: 70, label: { formatter: '70', color: c.text, fontSize: 10 }, lineStyle: { color: '#f97316' } }, { yAxis: 30, label: { formatter: '30', color: c.text, fontSize: 10 }, lineStyle: { color: '#3b82f6' } }] }
         }]
     }, true);
 }
 
+// ── Dual Sync ────────────────────────────────────────
+async function doDualSync() {
+    var a = document.getElementById('dualInputA').value.trim();
+    var b = document.getElementById('dualInputB').value.trim();
+    if (!a || !b || a.length !== 6 || b.length !== 6 || !/^\d{6}$/.test(a) || !/^\d{6}$/.test(b)) {
+        document.getElementById('dualError').textContent = '请输入两个有效的6位A股代码';
+        document.getElementById('dualError').classList.remove('hidden');
+        return;
+    }
+    document.getElementById('dualError').classList.add('hidden');
+    document.getElementById('dualLoading').classList.remove('hidden');
+    document.getElementById('dualResult').classList.add('hidden');
+    try {
+        var resp = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol_a: a, symbol_b: b })
+        });
+        if (!resp.ok) { var err = await resp.json(); throw new Error(err.detail); }
+        var data = await resp.json();
+        renderDualResult(data);
+    } catch (e) {
+        document.getElementById('dualError').textContent = e.message;
+        document.getElementById('dualError').classList.remove('hidden');
+    } finally {
+        document.getElementById('dualLoading').classList.add('hidden');
+    }
+}
+function renderDualResult(data) {
+    document.getElementById('dualPearson').textContent = data.pearson;
+    document.getElementById('dualLevel').textContent = data.sync_level;
+    document.getElementById('dualDays').textContent = data.common_days + ' 天';
+    document.getElementById('dualResult').classList.remove('hidden');
+    // Init dual charts
+    if (overlayChart) { overlayChart.dispose(); }
+    if (scatterChart) { scatterChart.dispose(); }
+    overlayChart = echarts.init(document.getElementById('overlayChart'));
+    scatterChart = echarts.init(document.getElementById('scatterChart'));
+    chartsReady = true;
+    var c = getCC();
+    // Overlay chart
+    var dates = data.overlay.map(function (d) { return d.date; });
+    var aVals = data.overlay.map(function (d) { return d.norm_a; });
+    var bVals = data.overlay.map(function (d) { return d.norm_b; });
+    overlayChart.setOption({
+        tooltip: { trigger: 'axis' },
+        grid: { left: '8%', right: '2%', top: '8%', bottom: '4%' },
+        legend: { data: [data.symbol_a, data.symbol_b], top: 0, textStyle: { color: c.text } },
+        xAxis: { type: 'category', data: dates, axisLabel: { color: c.text, fontSize: 10 } },
+        yAxis: { type: 'value', name: '归一化价格', axisLabel: { color: c.text, fontSize: 10 } },
+        series: [
+            { name: data.symbol_a, type: 'line', data: aVals, symbol: 'none', lineStyle: { color: '#3b82f6', width: 1.5 } },
+            { name: data.symbol_b, type: 'line', data: bVals, symbol: 'none', lineStyle: { color: '#f97316', width: 1.5 } }
+        ]
+    }, true);
+    // Scatter chart
+    var scatterData = data.scatter.map(function (d) { return [d.x, d.y]; });
+    scatterChart.setOption({
+        tooltip: { trigger: 'item', formatter: function (p) { return data.symbol_a + ': ' + p.value[0].toFixed(2) + '<br>' + data.symbol_b + ': ' + p.value[1].toFixed(2); } },
+        grid: { left: '10%', right: '4%', top: '8%', bottom: '8%' },
+        xAxis: { type: 'value', name: data.symbol_a + ' 价格', axisLabel: { color: c.text, fontSize: 10 } },
+        yAxis: { type: 'value', name: data.symbol_b + ' 价格', axisLabel: { color: c.text, fontSize: 10 } },
+        series: [{ type: 'scatter', data: scatterData, symbolSize: 4, itemStyle: { color: '#8b5cf6', opacity: 0.6 } }]
+    }, true);
+}
+
+// ── News ─────────────────────────────────────────────
+function changeNewsDate(delta) { newsDateOffset += delta; loadNews(); }
+function loadNews() {
+    var d = new Date();
+    d.setDate(d.getDate() + newsDateOffset);
+    var ds = d.toISOString().slice(0, 10);
+    document.getElementById('newsDate').textContent = ds;
+    document.getElementById('newsLoading').classList.remove('hidden');
+    document.getElementById('newsError').classList.add('hidden');
+    document.getElementById('newsContent').innerHTML = '';
+    fetch('/api/news?date=' + ds)
+        .then(function (r) { if (!r.ok) throw new Error('加载失败'); return r.json(); })
+        .then(function (data) { renderNews(data); })
+        .catch(function (e) { document.getElementById('newsError').textContent = e.message; document.getElementById('newsError').classList.remove('hidden'); })
+        .finally(function () { document.getElementById('newsLoading').classList.add('hidden'); });
+}
+function renderNews(data) {
+    var el = document.getElementById('newsContent');
+    var sections = [
+        { key: 'macro', title: '全球宏观' },
+        { key: 'stock_specific', title: '市场快讯' }
+    ];
+    var html = '';
+    sections.forEach(function (sec) {
+        var items = data[sec.key] || [];
+        html += '<div class="news-category"><div class="news-cat-title">' + sec.title + '</div>';
+        if (items.length === 0) {
+            html += '<div class="news-empty">暂无数据</div>';
+        } else {
+            items.forEach(function (item) {
+                html += '<div class="news-item"><span class="news-item-title">' + escapeHtml(item.title) + '</span><span class="news-item-time">' + (item.time || '') + '</span></div>';
+            });
+        }
+        html += '</div>';
+    });
+    el.innerHTML = html;
+}
+function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+// ── Report rendering ─────────────────────────────────
 function renderReport(text) {
     if (!text) return;
     var el = document.getElementById('report');
-
-    // Split into blocks: tables vs text
-    var lines = text.split('\n');
-    var blocks = [];
-    var inTable = false;
-    var tableLines = [];
-
-    for (var i = 0; i < lines.length; i++) {
-        var line = lines[i];
-        var isTableLine = /^\|.+\|$/.test(line.trim()) && !/^[-|]+$/.test(line.trim());
-        var isSepLine = /^\|[-|: ]+\|$/.test(line.trim());
-
-        if (isTableLine || isSepLine) {
-            if (!inTable) {
-                // flush previous text block
-                if (i > 0 && tableLines.length === 0) {
-                    var prevText = lines.slice(blocks.length > 0 ? blocks[blocks.length-1].endLine+1 : 0, i).join('\n');
-                    if (prevText.trim()) blocks.push({ type: 'text', content: prevText });
-                }
-                inTable = true;
-            }
-            if (isTableLine) tableLines.push(line.trim());
-        } else {
-            if (inTable) {
-                blocks.push({ type: 'table', rows: tableLines });
-                tableLines = [];
-                inTable = false;
-                blocks.push({ type: 'text', startLine: i });
-            }
-        }
-    }
-    // flush remaining
-    if (inTable && tableLines.length > 0) {
-        blocks.push({ type: 'table', rows: tableLines });
-    }
-
-    // Build HTML
-    if (blocks.length === 0) {
-        // No table blocks, process entire text normally
-        blocks.push({ type: 'text', content: text });
-    } else {
-        // Add trailing text after last block
-        var lastBlock = blocks[blocks.length - 1];
-        var lastIdx = -1;
-        for (var b = blocks.length - 1; b >= 0; b--) {
-            if (blocks[b].type === 'text' && blocks[b].startLine !== undefined) {
-                lastIdx = blocks[b].startLine; break;
-            }
-        }
-        // Build text content for each text block
-        var prevEnd = -1;
-        var newBlocks = [];
-        for (var b = 0; b < blocks.length; b++) {
-            if (blocks[b].type === 'text' && blocks[b].startLine !== undefined) {
-                var start = blocks[b].startLine;
-                var end = (b + 1 < blocks.length && blocks[b+1].type === 'table') ? lines.length : lines.length;
-                // find end of this text block
-                var tblStart = lines.length;
-                for (var c = b + 1; c < blocks.length; c++) {
-                    if (blocks[c].type === 'table') { tblStart = lines.indexOf(blocks[c].rows[0].replace(/^\|/, '').trim()); break; }
-                }
-                var content = lines.slice(start, tblStart < lines.length ? lines.findIndex(function(l, idx) { return idx >= start && /^\|.+\|$/.test(l.trim()); }) : lines.length).join('\n');
-                if (content.trim()) { newBlocks.push({ type: 'text', content: content }); }
-            } else if (blocks[b].type === 'table') {
-                newBlocks.push(blocks[b]);
-            }
-        }
-        blocks = newBlocks;
-        if (blocks.length === 0) blocks = [{ type: 'text', content: text }];
-    }
-
-    // Ensure text blocks before/after tables are captured
-    // Simpler approach: just convert tables inline, then process text
-    var processed = text;
-    // Replace table blocks with placeholders
-    var tableRegex = /((?:^\|(?:[^|\n]+)\|.+\n)+)/gm;
-    var tables = [];
-    processed = processed.replace(tableRegex, function (match) {
-        var rows = match.trim().split('\n');
-        // Filter out separator lines
-        rows = rows.filter(function (r) { return !/^[\s|:-]+$/.test(r); });
-        if (rows.length === 0) return '';
-        var html = '<table><thead><tr>';
-        var headerCells = rows[0].split('|').filter(function (c) { return c.trim(); });
-        for (var h = 0; h < headerCells.length; h++) {
-            html += '<th>' + headerCells[h].trim() + '</th>';
-        }
-        html += '</tr></thead><tbody>';
-        for (var r = 1; r < rows.length; r++) {
-            var cells = rows[r].split('|').filter(function (c) { return c.trim(); });
-            html += '<tr>';
-            for (var c = 0; c < cells.length; c++) {
-                html += '<td>' + cells[c].trim() + '</td>';
-            }
-            html += '</tr>';
-        }
-        html += '</tbody></table>';
-        tables.push(html);
-        return '\n<!--TABLE' + (tables.length - 1) + '-->\n';
-    });
-
-    var html = processed
+    var html = text
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/^---+$/gm, '<hr>')
         .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
@@ -430,198 +442,88 @@ function renderReport(text) {
         .replace(/^- (.+)$/gm, '<li>$1</li>')
         .replace(/\n{2,}/g, '</p><p>')
         .replace(/\n/g, '<br>');
-
     html = '<p>' + html + '</p>';
     html = html.replace(/<li>[\s\S]*?<\/li>/g, function (m) { return '<ul>' + m + '</ul>'; });
     html = html.replace(/<\/ul>\s*<ul>/g, '');
-
-    // Restore table placeholders
-    for (var t = 0; t < tables.length; t++) {
-        html = html.replace('&lt;!--TABLE' + t + '--&gt;', tables[t]);
-    }
-
     el.innerHTML = html;
     el.classList.remove('hidden');
 }
 
 // ── Indicators ───────────────────────────────────────
 function calcMA(data, period) {
-    var result = [];
-    for (var i = 0; i < period - 1; i++) result.push(null);
-    for (var i = period - 1; i < data.length; i++) {
-        var sum = 0;
-        for (var j = 0; j < period; j++) sum += data[i - j];
-        result.push(sum / period);
-    }
-    return result;
+    var r = []; for (var i = 0; i < period - 1; i++) r.push(null);
+    for (var i = period - 1; i < data.length; i++) { var s = 0; for (var j = 0; j < period; j++) s += data[i - j]; r.push(s / period); }
+    return r;
 }
-
 function calcMACD(closes, fast, slow, signal) {
     fast = fast || 12; slow = slow || 26; signal = signal || 9;
-    var ema = function (data, period) {
-        var k = 2 / (period + 1);
-        var result = [];
-        for (var i = 0; i < period - 1; i++) result.push(null);
-        var prev = data[period - 1];
-        for (var i = period - 1; i < data.length; i++) {
-            prev = data[i] * k + prev * (1 - k);
-            result.push(prev);
-        }
-        return result;
+    var ema = function (d, p) {
+        var k = 2 / (p + 1), r = [];
+        for (var i = 0; i < p - 1; i++) r.push(null);
+        var prev = d[p - 1];
+        for (var i = p - 1; i < d.length; i++) { prev = d[i] * k + prev * (1 - k); r.push(prev); }
+        return r;
     };
-
-    var ema12 = ema(closes, fast);
-    var ema26 = ema(closes, slow);
-    var dif = ema12.map(function (v, i) { return v != null && ema26[i] != null ? v - ema26[i] : null; });
-    var validDif = dif.filter(function (v) { return v != null; });
-    var deaRaw = ema(validDif, signal);
-    var dea = [];
-    for (var i = 0; i < dif.length - validDif.length; i++) dea.push(null);
+    var e12 = ema(closes, fast), e26 = ema(closes, slow);
+    var dif = e12.map(function (v, i) { return v != null && e26[i] != null ? v - e26[i] : null; });
+    var vd = dif.filter(function (v) { return v != null; });
+    var deaRaw = ema(vd, signal), dea = [];
+    for (var i = 0; i < dif.length - vd.length; i++) dea.push(null);
     dea = dea.concat(deaRaw);
     var macd = dif.map(function (v, i) { return v != null && dea[i] != null ? (v - dea[i]) * 2 : null; });
     return { dif: dif, dea: dea, macd: macd };
 }
-
 function calcRSI(closes, period) {
-    period = period || 14;
-    var result = [];
-    for (var i = 0; i < period; i++) result.push(null);
-    var avgGain = 0, avgLoss = 0;
-    for (var i = 1; i <= period; i++) {
-        var delta = closes[i] - closes[i - 1];
-        if (delta > 0) avgGain += delta; else avgLoss -= delta;
-    }
-    avgGain /= period; avgLoss /= period;
-    result[period] = 100 - 100 / (1 + avgGain / Math.max(avgLoss, 1e-10));
-
+    period = period || 14; var r = []; for (var i = 0; i < period; i++) r.push(null);
+    var ag = 0, al = 0;
+    for (var i = 1; i <= period; i++) { var d = closes[i] - closes[i - 1]; if (d > 0) ag += d; else al -= d; }
+    ag /= period; al /= period;
+    r[period] = 100 - 100 / (1 + ag / Math.max(al, 1e-10));
     for (var i = period + 1; i < closes.length; i++) {
-        var delta2 = closes[i] - closes[i - 1];
-        var gain = delta2 > 0 ? delta2 : 0;
-        var loss = delta2 < 0 ? -delta2 : 0;
-        avgGain = (avgGain * (period - 1) + gain) / period;
-        avgLoss = (avgLoss * (period - 1) + loss) / period;
-        result[i] = 100 - 100 / (1 + avgGain / Math.max(avgLoss, 1e-10));
+        var d2 = closes[i] - closes[i - 1], g = d2 > 0 ? d2 : 0, l = d2 < 0 ? -d2 : 0;
+        ag = (ag * (period - 1) + g) / period; al = (al * (period - 1) + l) / period;
+        r[i] = 100 - 100 / (1 + ag / Math.max(al, 1e-10));
     }
-    return result;
-}
-
-// ── Helpers ──────────────────────────────────────────
-function showLoading(show) {
-    document.getElementById('loading').classList.toggle('hidden', !show);
-}
-
-function showError(msg) {
-    var el = document.getElementById('error');
-    el.textContent = msg;
-    el.classList.remove('hidden');
-}
-
-function hideError() {
-    document.getElementById('error').classList.add('hidden');
-}
-
-function hideReport() {
-    document.getElementById('report').classList.add('hidden');
+    return r;
 }
 
 // ── History ──────────────────────────────────────────
 var HISTORY_KEY = 'quant-history';
-
 function saveToHistory(data) {
     var entries = loadHistory();
-    var date = new Date().toISOString().slice(0, 10);
+    var ds = new Date().toISOString().slice(0, 10);
     var snippet = (data.report || '').replace(/\*\*/g, '').slice(0, 80);
-
-    entries.unshift({
-        symbol: data.symbol,
-        name: data.name,
-        date: date,
-        snippet: snippet,
-        data: data
-    });
-
-    // deduplicate same stock + same date (keep latest)
+    entries.unshift({ symbol: data.symbol, name: data.name, date: ds, snippet: snippet, data: data });
     var seen = {};
-    var deduped = [];
-    for (var i = 0; i < entries.length; i++) {
-        var key = entries[i].symbol + entries[i].date;
-        if (seen[key]) continue;
-        seen[key] = true;
-        deduped.push(entries[i]);
-    }
-    entries = deduped;
-
-    // keep only last 50 entries
+    entries = entries.filter(function (e) { var k = e.symbol + e.date; if (seen[k]) return false; seen[k] = true; return true; });
     if (entries.length > 50) entries = entries.slice(0, 50);
-
-    try {
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(entries));
-    } catch (e) {
-        // quota exceeded: remove oldest half
-        entries = entries.slice(0, Math.floor(entries.length / 2));
-        try { localStorage.setItem(HISTORY_KEY, JSON.stringify(entries)); } catch (e2) {}
-    }
-
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(entries)); } catch (e) {}
     renderHistoryList();
 }
-
-function loadHistory() {
-    try {
-        var raw = localStorage.getItem(HISTORY_KEY);
-        if (!raw) return [];
-        return JSON.parse(raw);
-    } catch (e) { return []; }
-}
-
+function loadHistory() { try { var r = localStorage.getItem(HISTORY_KEY); return r ? JSON.parse(r) : []; } catch (e) { return []; } }
 function renderHistoryList() {
-    var entries = loadHistory();
-    var container = document.getElementById('historyList');
+    var entries = loadHistory(), container = document.getElementById('historyList');
     if (!container) return;
-
-    if (entries.length === 0) {
-        container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.78rem;text-align:center;padding:16px;">暂无历史记录</div>';
-        return;
-    }
-
-    container.innerHTML = entries.map(function (e, idx) {
-        return '<div class="history-item" onclick="loadHistoryEntry(' + idx + ')" title="' + e.symbol + ' ' + e.name + '">' +
-            '<div class="hi-head">' +
-                '<span class="hi-code">' + e.symbol + '</span>' +
-                '<span class="hi-date">' + e.date + '</span>' +
-            '</div>' +
-            '<div class="hi-name">' + (e.name || '') + '</div>' +
-            '<div class="hi-snippet">' + (e.snippet || '') + '</div>' +
-        '</div>';
+    if (entries.length === 0) { container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.78rem;text-align:center;padding:16px;">暂无历史记录</div>'; return; }
+    container.innerHTML = entries.map(function (e, i) {
+        return '<div class="history-item" onclick="loadHistoryEntry(' + i + ')"><div class="hi-head"><span class="hi-code">' + e.symbol + '</span><span class="hi-date">' + e.date + '</span></div><div class="hi-name">' + (e.name || '') + '</div><div class="hi-snippet">' + (e.snippet || '') + '</div></div>';
     }).join('');
 }
-
 function loadHistoryEntry(idx) {
     var entries = loadHistory();
     if (idx < 0 || idx >= entries.length) return;
-    var data = entries[idx].data;
-    if (!data) return;
-
+    var data = entries[idx].data; if (!data) return;
     currentSymbol = data.symbol;
+    switchTab('single');
     document.getElementById('symbolInput').value = data.symbol;
-
-    document.getElementById('stockName').textContent = data.name || data.symbol;
-    document.getElementById('stockIndustry').textContent = '行业: ' + (data.industry || '未知');
-    document.getElementById('stockBusiness').textContent = '主营: ' + (data.business || '未知');
-    document.getElementById('stockInfo').classList.remove('hidden');
-
-    renderQuoteCards(data.quote);
-
-    klineRawData = data.kline_data || [];
-    renderAllCharts(klineRawData);
-
-    renderReport(data.report);
-
-    document.getElementById('klineChart').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('symbolInput2').value = data.symbol;
+    showSingleResult();
+    renderResult(data);
 }
+function clearAllHistory() { localStorage.removeItem(HISTORY_KEY); renderHistoryList(); }
 
-function clearAllHistory() {
-    localStorage.removeItem(HISTORY_KEY);
-    renderHistoryList();
-}
-
-// sidebar history loaded in bootstrap after ECharts ready
+// ── Helpers ──────────────────────────────────────────
+function showLoading(s) { document.getElementById('loading').classList.toggle('hidden', !s); }
+function showError(m) { var e = document.getElementById('error'); if (e) { e.textContent = m; e.classList.remove('hidden'); } }
+function hideError() { var e = document.getElementById('error'); if (e) e.classList.add('hidden'); }
+function hideReport() { var e = document.getElementById('report'); if (e) e.classList.add('hidden'); }

@@ -318,6 +318,109 @@ class AgenticQuant:
             "report": report
         }
 
+    def calc_stock_sync(self, symbol_a: str, symbol_b: str) -> dict:
+        """计算两只股票的涨跌同步率（Pearson 相关系数 + 走势叠加）"""
+        try:
+            bs.login()
+            code_a = self._to_baostock_code(symbol_a)
+            code_b = self._to_baostock_code(symbol_b)
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=300)).strftime('%Y-%m-%d')
+
+            rs_a = bs.query_history_k_data_plus(code_a, "date,close", start_date=start_date, end_date=end_date, frequency="d", adjustflag="2")
+            rs_b = bs.query_history_k_data_plus(code_b, "date,close", start_date=start_date, end_date=end_date, frequency="d", adjustflag="2")
+            df_a = rs_a.get_data()
+            df_b = rs_b.get_data()
+            bs.logout()
+
+            if df_a.empty or df_b.empty:
+                return {"error": "数据获取失败"}
+
+            df_a = df_a.rename(columns={'close': 'close_a'})[['date', 'close_a']]
+            df_b = df_b.rename(columns={'close': 'close_b'})[['date', 'close_b']]
+            merged = pd.merge(df_a, df_b, on='date', how='inner')
+            merged['close_a'] = merged['close_a'].astype(float)
+            merged['close_b'] = merged['close_b'].astype(float)
+
+            if len(merged) < 20:
+                return {"error": "共同交易日不足20天"}
+
+            corr = merged['close_a'].corr(merged['close_b'])
+
+            # Normalized overlay
+            merged['norm_a'] = merged['close_a'] / merged['close_a'].iloc[0] * 100
+            merged['norm_b'] = merged['close_b'] / merged['close_b'].iloc[0] * 100
+
+            # Scatter data
+            scatter = [{"x": round(float(merged['close_a'].iloc[i]), 2), "y": round(float(merged['close_b'].iloc[i]), 2)} for i in range(len(merged))]
+
+            # Overlay data
+            overlay = []
+            for _, row in merged.iterrows():
+                overlay.append({"date": row['date'], "norm_a": round(float(row['norm_a']), 2), "norm_b": round(float(row['norm_b']), 2)})
+
+            abs_corr = abs(corr)
+            if abs_corr > 0.8: level = "高度同步"
+            elif abs_corr > 0.5: level = "中度同步"
+            elif abs_corr > 0.3: level = "弱同步"
+            else: level = "几乎不同步"
+
+            return {
+                "symbol_a": symbol_a, "symbol_b": symbol_b,
+                "pearson": round(float(corr), 4),
+                "sync_level": level,
+                "common_days": int(len(merged)),
+                "overlay": overlay,
+                "scatter": scatter
+            }
+        except Exception as e:
+            try: bs.logout()
+            except: pass
+            return {"error": str(e)}
+
+    def fetch_official_news(self, date_str: str = None) -> dict:
+        """获取指定日期的官方媒体新闻报道"""
+        if date_str is None:
+            date_str = datetime.now().strftime('%Y-%m-%d')
+
+        cache_key = f"official_news_{date_str}"
+        if cached := self._get_cache(cache_key):
+            return cached
+
+        print(f"正在获取 [{date_str}] 官方媒体报道...")
+        result = {"date": date_str, "macro": [], "stock_specific": []}
+
+        try:
+            macro = ak.stock_info_global_em()
+            if not macro.empty:
+                for _, row in macro.head(20).iterrows():
+                    result["macro"].append({"title": str(row['标题']), "time": str(row.get('发布时间', ''))})
+        except Exception as e:
+            print(f"宏观新闻获取失败: {e}")
+
+        try:
+            sina = ak.stock_info_global_sina()
+            if not sina.empty:
+                for _, row in sina.head(20).iterrows():
+                    title = str(row.get('title', row.get('内容', '')))
+                    if title and title != 'nan':
+                        result["stock_specific"].append({"title": title, "time": date_str})
+        except Exception as e:
+            print(f"新浪快讯获取失败: {e}")
+
+        # Deduplicate
+        seen = set()
+        for cat in ["macro", "stock_specific"]:
+            unique = []
+            for item in result[cat]:
+                if item['title'] not in seen:
+                    seen.add(item['title'])
+                    unique.append(item)
+            result[cat] = unique
+
+        self._set_cache(cache_key, result)
+        return result
+
 if __name__ == "__main__":
     import os
     from dotenv import load_dotenv

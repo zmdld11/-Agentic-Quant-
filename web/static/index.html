@@ -17,8 +17,14 @@
         </div>
     </div>
 
-    <header class="header">
-        <h1>📊 Agentic Quant 量化投研看板</h1>
+    <!-- 标题栏 (功能页显示) -->
+    <header id="appHeader" class="header hidden">
+        <h1 class="header-title" onclick="goHome()" title="返回主页">📊 Agentic Quant</h1>
+        <nav id="tabNav" class="tab-nav">
+            <button class="tab-btn active" data-tab="single">单股分析</button>
+            <button class="tab-btn" data-tab="dual">双股同步</button>
+            <button class="tab-btn" data-tab="news">官媒报道</button>
+        </nav>
         <div class="header-actions">
             <a href="https://github.com/zmdld11/-Agentic-Quant-" target="_blank" class="github-btn" title="GitHub">
                 <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
@@ -27,42 +33,114 @@
         </div>
     </header>
 
-    <main class="main">
-        <div class="search-bar">
-            <input type="text" id="symbolInput" placeholder="输入6位A股代码 (如 600519)" maxlength="6" autofocus>
-            <button id="analyzeBtn" onclick="doAnalyze()">🔍 分析</button>
-            <div class="period-selector">
-                <button class="period-btn" data-period="1m">1月</button>
-                <button class="period-btn active" data-period="3m">3月</button>
-                <button class="period-btn" data-period="6m">6月</button>
-                <button class="period-btn" data-period="1y">1年</button>
+    <!-- ====== 主页 ====== -->
+    <div id="pageHome" class="page home-page">
+        <div class="home-hero">
+            <div class="home-content">
+                <h1 class="home-title">📊 Agentic Quant</h1>
+                <p class="home-subtitle">基于大语言模型与政治经济学的 A 股量化投研系统</p>
+                <div class="home-cards">
+                    <div class="home-card" onclick="switchTab('single')">
+                        <span class="home-card-icon">📈</span>
+                        <h3>单股分析</h3>
+                        <p>输入 A 股代码，AI 深度推演次日走势</p>
+                    </div>
+                    <div class="home-card" onclick="switchTab('dual')">
+                        <span class="home-card-icon">🔗</span>
+                        <h3>双股同步</h3>
+                        <p>计算两只股票涨跌同步率与相关性</p>
+                    </div>
+                    <div class="home-card" onclick="switchTab('news')">
+                        <span class="home-card-icon">📰</span>
+                        <h3>官媒报道</h3>
+                        <p>查阅当日官方政策与行业动态</p>
+                    </div>
+                </div>
+                <p class="home-footer">⚠️ 仅供参考，不构成投资建议</p>
             </div>
         </div>
+    </div>
 
-        <div id="stockInfo" class="stock-info hidden">
-            <span id="stockName" class="stock-name"></span>
-            <span id="stockIndustry" class="stock-meta"></span>
-            <span id="stockBusiness" class="stock-meta"></span>
+    <!-- ====== 单股分析 ====== -->
+    <div id="pageSingle" class="page hidden">
+        <!-- 初始大搜索框 -->
+        <div id="singleInit" class="single-init">
+            <div class="big-search">
+                <input type="text" id="symbolInput" placeholder="输入6位A股代码 (如 600519)" maxlength="6">
+                <button id="analyzeBtn" onclick="doAnalyze()">🔍 分析</button>
+            </div>
+            <p class="search-hint">输入任意 A 股代码，AI 为您生成投研报告</p>
+            <div id="searchError" class="search-error hidden"></div>
         </div>
-
-        <div id="quoteCards" class="quote-cards hidden"></div>
-
-        <div id="klineChart" class="chart-container main-chart"></div>
-
-        <div class="sub-charts">
-            <div id="volumeChart" class="chart-container sub-chart"></div>
-            <div id="macdChart" class="chart-container sub-chart"></div>
-            <div id="rsiChart" class="chart-container sub-chart"></div>
+        <!-- 结果区 -->
+        <div id="singleResult" class="single-result hidden">
+            <div class="compact-search">
+                <input type="text" id="symbolInput2" placeholder="输入代码" maxlength="6">
+                <button onclick="doAnalyze()">🔍</button>
+                <div class="period-selector">
+                    <button class="period-btn" data-period="1m">1月</button>
+                    <button class="period-btn active" data-period="3m">3月</button>
+                    <button class="period-btn" data-period="6m">6月</button>
+                    <button class="period-btn" data-period="1y">1年</button>
+                </div>
+            </div>
+            <div id="stockInfo" class="stock-info hidden">
+                <span id="stockName" class="stock-name"></span>
+                <span id="stockIndustry" class="stock-meta"></span>
+                <span id="stockBusiness" class="stock-meta"></span>
+            </div>
+            <div id="quoteCards" class="quote-cards hidden"></div>
+            <div id="klineChart" class="chart-container main-chart"></div>
+            <div class="sub-charts">
+                <div id="volumeChart" class="chart-container sub-chart"></div>
+                <div id="macdChart" class="chart-container sub-chart"></div>
+                <div id="rsiChart" class="chart-container sub-chart"></div>
+            </div>
+            <div id="loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>AI 正在深度推演，请稍候...</p>
+            </div>
+            <div id="report" class="report hidden"></div>
+            <div id="error" class="error hidden"></div>
         </div>
+    </div>
 
-        <div id="loading" class="loading hidden">
-            <div class="spinner"></div>
-            <p>AI 正在深度推演，请稍候...</p>
+    <!-- ====== 双股同步 ====== -->
+    <div id="pageDual" class="page hidden">
+        <div class="dual-search">
+            <input type="text" id="dualInputA" placeholder="股票A (如 600519)" maxlength="6">
+            <span class="dual-vs">vs</span>
+            <input type="text" id="dualInputB" placeholder="股票B (如 000858)" maxlength="6">
+            <button id="dualBtn" onclick="doDualSync()">⚡ 分析</button>
         </div>
+        <div id="dualLoading" class="loading hidden"><div class="spinner"></div><p>计算中...</p></div>
+        <div id="dualError" class="error hidden"></div>
+        <div id="dualResult" class="dual-result hidden">
+            <div class="dual-cards">
+                <div class="dual-card"><span class="dual-label">Pearson 相关系数</span><span class="dual-value" id="dualPearson"></span></div>
+                <div class="dual-card"><span class="dual-label">同步率判定</span><span class="dual-value" id="dualLevel"></span></div>
+                <div class="dual-card"><span class="dual-label">共同交易日</span><span class="dual-value" id="dualDays"></span></div>
+            </div>
+            <div class="dual-charts">
+                <div id="overlayChart" class="chart-container dual-chart-main"></div>
+                <div id="scatterChart" class="chart-container dual-chart-sub"></div>
+            </div>
+            <div id="dualReport" class="report hidden"></div>
+        </div>
+    </div>
 
-        <div id="report" class="report hidden"></div>
-        <div id="error" class="error hidden"></div>
-    </main>
+    <!-- ====== 官媒报道 ====== -->
+    <div id="pageNews" class="page hidden">
+        <div class="news-header">
+            <button class="news-date-btn" onclick="changeNewsDate(-1)">◀ 前一天</button>
+            <span id="newsDate" class="news-date-label"></span>
+            <button class="news-date-btn" onclick="changeNewsDate(1)">后一天 ▶</button>
+            <button class="news-date-btn" onclick="loadNews()">刷新</button>
+        </div>
+        <div id="newsLoading" class="loading hidden"><div class="spinner"></div><p>加载中...</p></div>
+        <div id="newsError" class="error hidden"></div>
+        <div id="newsContent" class="news-content"></div>
+    </div>
 
     <!-- 历史记录侧边栏 -->
     <aside id="historyPanel" class="history-panel">

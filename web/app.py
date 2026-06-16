@@ -60,6 +60,39 @@ async def get_kline(code: str, period: str = "3m"):
     return {"symbol": code, "kline_data": kline, "count": len(kline), "display_bars": display_bars}
 
 
+class SyncRequest(BaseModel):
+    symbol_a: str
+    symbol_b: str
+
+@app.post("/api/sync")
+async def sync_stocks(req: SyncRequest):
+    if not quant_engine:
+        raise HTTPException(status_code=503, detail="引擎未初始化")
+    a = req.symbol_a.strip()
+    b = req.symbol_b.strip()
+    for s in [a, b]:
+        if not s.isdigit() or len(s) != 6:
+            raise HTTPException(status_code=400, detail=f"无效代码: {s}")
+    try:
+        result = quant_engine.calc_stock_sync(a, b)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return result
+
+@app.get("/api/news")
+async def get_news(date: str = None):
+    if not quant_engine:
+        raise HTTPException(status_code=503, detail="引擎未初始化")
+    try:
+        result = quant_engine.fetch_official_news(date)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+    return result
+
 @app.get("/")
 async def index():
     static_dir = os.path.join(os.path.dirname(__file__), "static")
