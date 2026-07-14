@@ -5,6 +5,7 @@ import numpy as np
 from datetime import datetime, timedelta
 from openai import OpenAI
 import time
+import threading
 
 class AgenticQuant:
     '''单日推演智能体 (LLM Agentic Quant)
@@ -18,6 +19,11 @@ class AgenticQuant:
         # 内存级缓存，防止IP被封：数据有效存活期1小时 (3600秒)
         self.cache = {}
         self.cache_ttl = 3600
+        self._report_cache = {}
+        self._news_cache = None
+        self._news_cache_time = 0
+        self._news_lock = threading.Lock()
+        self._start_news_updater()
 
     @staticmethod
     def _to_baostock_code(symbol: str) -> str:
@@ -250,21 +256,75 @@ class AgenticQuant:
         retail_sentiment = self.fetch_retail_sentiment(symbol)
         kline_data = self.fetch_kline_range(symbol, days=60)
 
+        data_summary = {
+            "name": profile.get('name', ''),
+            "industry": profile.get('industry', ''),
+            "business": profile.get('business', ''),
+            "close": quant.get('close'),
+            "pct_change": quant.get('pct_change'),
+            "volume_ratio": quant.get('volume_ratio'),
+            "rsi": quant.get('rsi_14'),
+            "macd": quant.get('macd'),
+            "ma20_bias": quant.get('ma20_bias'),
+            "macro_news": macro_news,
+            "stock_news": stock_news,
+            "retail_sentiment": retail_sentiment,
+        }
+
+        return {
+            "symbol": symbol,
+            "name": profile.get('name', ''),
+            "industry": profile.get('industry', ''),
+            "business": profile.get('business', ''),
+            "quote": quant,
+            "kline_data": kline_data,
+            "macro_news": macro_news,
+            "stock_news": stock_news,
+            "retail_sentiment": retail_sentiment,
+            "data_summary": data_summary,
+            "report": None
+        }
+
+    def get_report(self, symbol: str, data_summary: dict) -> str:
+        import time as time_module
+
+        # Check cache (30 min TTL)
+        cached = self._report_cache.get(symbol)
+        if cached:
+            report_text, ts = cached
+            if time_module.time() - ts < 1800:
+                print(f"[缓存命中] {symbol} 的分析报告（30分钟内有效）")
+                return report_text
+
+        print(f"正在请求大模型，利用该股票的性质、量价、环境综合推演 {symbol}...")
+
+        profile_name = data_summary.get('name', '')
+        industry = data_summary.get('industry', '')
+        business = data_summary.get('business', '')
+        close = data_summary.get('close', 'N/A')
+        pct_change = data_summary.get('pct_change', 'N/A')
+        volume_ratio = data_summary.get('volume_ratio', 'N/A')
+        rsi = data_summary.get('rsi', 'N/A')
+        macd = data_summary.get('macd', 'N/A')
+        ma20_bias = data_summary.get('ma20_bias', 'N/A')
+        macro_news = data_summary.get('macro_news', [])
+        stock_news = data_summary.get('stock_news', [])
+        retail_sentiment = data_summary.get('retail_sentiment', [])
+
         prompt = f'''你是一位深谙政治经济学与行为金融学的顶尖A股量化游资操盘手。
 你需要结合资产当前的多维技术面状态、公司的基本业务性质、以及今日的宏观/个股新闻，对该股票进行全面的"排雷"和明天的"推演"。
 
 【研究标的档案】：
-- 股票代码：{symbol} ({profile['name']})
-- 所属行业：{profile['industry']}
-- 主营业务：{profile['business']}
+- 股票代码：{symbol} ({profile_name})
+- 所属行业：{industry}
+- 主营业务：{business}
 
-【当天盘面核心量价特征（截至 {quant['date']}）】：
-- 现价：{quant['close']} 元(今日涨跌幅 {quant['pct_change']}%)
-- 资金量能异动(量比)：{quant['volume_ratio']:.2f} （今日成交量是近5日均量的倍数，>1.5为明显放量，<0.8为极度缩量）
-- 均线偏离度(MA20_Bias)：{quant['ma20_bias']:.4f} （正为超买获利盘多，负为超卖套牢盘多）
-- 动量强弱指标(RSI_14)：{quant['rsi_14']:.2f} （>70警惕超买回调，<30注意超卖反弹）
-- 均线趋势发散度(MACD)：{quant['macd']:.3f} （正为多头排列，负为空头排列）
-- 市场情绪波动率(5日标准差)：{quant['volatility']:.4f}
+【当天盘面核心量价特征】：
+- 现价：{close} 元(今日涨跌幅 {pct_change}%)
+- 资金量能异动(量比)：{volume_ratio} （今日成交量是近5日均量的倍数，>1.5为明显放量，<0.8为极度缩量）
+- 均线偏离度(MA20_Bias)：{ma20_bias} （正为超买获利盘多，负为超卖套牢盘多）
+- 动量强弱指标(RSI_14)：{rsi} （>70警惕超买回调，<30注意超卖反弹）
+- 均线趋势发散度(MACD)：{macd} （正为多头排列，负为空头排列）
 
 【今日全市场宏观事件快讯】：
 {chr(10).join(['- ' + str(n) for n in macro_news])}
@@ -282,11 +342,6 @@ class AgenticQuant:
 3. 散户心理与暗线跟踪：结合最新的【散户微观情绪与小道消息】，指出市场是否存在未被新闻披露的"小作文"驱动，或者是否存在"买预期卖现实"的踩踏风险。
 4. 明日博弈预判：综合给出你对明日该股票走势的最终短期推断结论（看涨 / 看跌 / 震荡），并用一句话给出操作建议。'''
 
-        print("\n\n================ AI 思考的大脑数据输入 ==================")
-        print(prompt)
-        print("=========================================================\n")
-
-        print("正在请求大模型，利用该股票的性质、量价、环境综合推演，请等待...")
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
@@ -305,18 +360,8 @@ class AgenticQuant:
             report = f"调用大模型报错: {e}"
             print(report)
 
-        return {
-            "symbol": symbol,
-            "name": profile.get('name', ''),
-            "industry": profile.get('industry', ''),
-            "business": profile.get('business', ''),
-            "quote": quant,
-            "kline_data": kline_data,
-            "macro_news": macro_news,
-            "stock_news": stock_news,
-            "retail_sentiment": retail_sentiment,
-            "report": report
-        }
+        self._report_cache[symbol] = (report, time_module.time())
+        return report
 
     def calc_stock_sync(self, symbol_a: str, symbol_b: str) -> dict:
         """计算两只股票的涨跌同步率（Pearson 相关系数 + 走势叠加）"""
@@ -419,6 +464,39 @@ class AgenticQuant:
             result[cat] = unique
 
         self._set_cache(cache_key, result)
+        return result
+
+    def _start_news_updater(self):
+        """启动后台线程，每6小时自动刷新官方新闻"""
+        def updater():
+            while True:
+                print("[新闻后台更新] 正在刷新官方新闻缓存...")
+                try:
+                    self._news_cache = self.fetch_official_news()
+                    self._news_cache_time = time.time()
+                    print("[新闻后台更新] 完成")
+                except Exception as e:
+                    print(f"[新闻后台更新] 失败: {e}")
+                time.sleep(6 * 3600)
+
+        thread = threading.Thread(target=updater, daemon=True)
+        thread.start()
+
+    def get_cached_news(self, date_str: str = None) -> dict:
+        """返回缓存的官方新闻，若日期不匹配则实时获取"""
+        if date_str is None:
+            date_str = datetime.now().strftime('%Y-%m-%d')
+
+        if self._news_cache is not None:
+            cache_date = self._news_cache.get('date', '')
+            if cache_date == date_str:
+                print(f"[新闻缓存命中] date={date_str}")
+                return self._news_cache
+
+        print(f"[新闻缓存未命中] 实时获取 date={date_str}")
+        result = self.fetch_official_news(date_str)
+        self._news_cache = result
+        self._news_cache_time = time.time()
         return result
 
 if __name__ == "__main__":

@@ -102,6 +102,32 @@
 | 修改 | `web/app.py` | 新增 `/api/sync`、`/api/news` |
 | 修改 | `src/models/agentic_quant.py` | 新增 `calc_stock_sync()`、`fetch_official_news()` |
 
+## v2.1 优化 (2026-07-14)
+
+### API 拆分
+- `POST /api/analyze` → 仅返回量价数据（~5s），前端立刻渲染图表
+- `POST /api/report` → 单独跑 LLM（~20s），前端轮询/等待
+- LLM 缓存：同股 30min 内复用缓存报告
+
+### 渐进加载
+- 点击查询 → 历史栏立刻插入 "数据获取中..."
+- 数据返回 → 图表渲染，历史栏更新 "AI推演中..."
+- LLM 返回 → 报告填入，历史栏更新为摘要
+- 按钮全程 spinner
+
+### 新闻缓存
+- 服务端启动时拉取，每 6h 后台自动刷新
+- 用户请求直接读内存缓存
+
+### 新闻展示优化
+- 全球宏观：标题 + 摘要，有正文可展开（折叠）
+- 市场快讯：默认显示【标题】+ 日期，点击展开全文
+
+### 历史侧栏优化
+- 按功能区分：single → quant-history-single, dual → quant-history-dual, news → 隐藏
+- 状态标签：数据获取中 / AI推演中 / 摘要 / 错误
+- 新增单条删除按钮（每行右侧 X）
+
 ## 性能考量
 
 - 2C2G 服务器：所有计算均为 pandas 轻量运算，无深度学习

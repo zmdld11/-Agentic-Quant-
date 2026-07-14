@@ -95,9 +95,19 @@ function switchTab(tab) {
             b.classList.toggle('active', b.dataset.tab === tab);
         });
     }
+    // History panel visibility based on tab
+    var hp = document.getElementById('historyPanel');
+    if (hp) {
+        if (tab === 'news') {
+            hp.style.display = 'none';
+        } else {
+            hp.style.display = 'flex';
+        }
+    }
     if (tab === 'news') loadNews();
     if (tab === 'dual') { chartsReady = false; }
     if (tab === 'single' && singleState === 'init') resetSingleInit();
+    renderHistoryList();
     resizeAllCharts();
 }
 
@@ -165,6 +175,8 @@ async function doAnalyze() {
     showLoading(true);
     hideError();
     hideReport();
+    // Immediately add history entry with fetching status
+    saveToHistory({symbol: symbol, name: '', report: null}, 'fetching', '数据获取中...', null);
     try {
         var resp = await fetch('/api/analyze', {
             method: 'POST',
@@ -175,6 +187,25 @@ async function doAnalyze() {
         var data = await resp.json();
         showSingleResult();
         renderResult(data);
+        // Save to history with reporting status (report not ready yet)
+        var dataSummary = data.data_summary || null;
+        saveToHistory(data, 'reporting', 'AI推演中...', dataSummary);
+        // Call report API separately
+        try {
+            var reportResp = await fetch('/api/report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symbol: symbol, data_summary: dataSummary })
+            });
+            if (!reportResp.ok) throw new Error('报告生成失败');
+            var reportData = await reportResp.json();
+            renderReport(reportData.report);
+            var snippet = (reportData.report || '').replace(/\*\*/g, '').slice(0, 80);
+            updateHistoryEntry(symbol, { status: 'done', snippet: snippet });
+        } catch (reportErr) {
+            showError(reportErr.message);
+            updateHistoryEntry(symbol, { status: 'error', snippet: reportErr.message });
+        }
     } catch (e) {
         if (singleState === 'init') {
             var errEl = document.getElementById('searchError');
@@ -208,8 +239,6 @@ function renderResult(data) {
     klineRawData = data.kline_data || [];
     var analyzeVisible = {"1m": 22, "3m": 60, "6m": 60, "1y": 60};
     renderAllCharts(klineRawData, analyzeVisible[currentPeriod] || 60);
-    renderReport(data.report);
-    saveToHistory(data);
     document.getElementById('klineChart').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -355,6 +384,7 @@ function renderDualResult(data) {
     document.getElementById('dualLevel').textContent = data.sync_level;
     document.getElementById('dualDays').textContent = data.common_days + ' 天';
     document.getElementById('dualResult').classList.remove('hidden');
+    saveDualToHistory(data);
     // Init dual charts
     if (overlayChart) { overlayChart.dispose(); }
     if (scatterChart) { scatterChart.dispose(); }
@@ -417,8 +447,40 @@ function renderNews(data) {
         if (items.length === 0) {
             html += '<div class="news-empty">暂无数据</div>';
         } else {
+            var isMacro = sec.key === 'macro';
             items.forEach(function (item) {
-                html += '<div class="news-item"><span class="news-item-title">' + escapeHtml(item.title) + '</span><span class="news-item-time">' + (item.time || '') + '</span></div>';
+                var title = item.title || '';
+                var time = item.time || '';
+                if (isMacro) {
+                    // Global macro: plain list, no collapsible
+                    html += '<div class="news-item">';
+                    html += '<span class="news-item-title-text">' + escapeHtml(title) + '</span>';
+                    if (time) html += '<span class="news-item-time">' + escapeHtml(time) + '</span>';
+                    html += '</div>';
+                } else {
+                    // Market news: collapsible with 【title】+ body
+                    var match = title.match(/^(【[^】]+】)(.*)$/);
+                    var headPart = title;
+                    var bodyPart = '';
+                    if (match) {
+                        headPart = match[1];
+                        bodyPart = match[2].trim();
+                    } else {
+                        headPart = title;
+                        bodyPart = '';
+                    }
+                    var hasBody = bodyPart.length > 0;
+                    html += '<div class="news-item' + (hasBody ? '' : '') + '"' + (hasBody ? ' onclick="this.classList.toggle(\'open\')"' : '') + '>';
+                    html += '<div class="news-item-head">';
+                    html += '<span class="news-item-title-text">' + escapeHtml(headPart) + '</span>';
+                    if (time) html += '<span class="news-item-time">' + escapeHtml(time) + '</span>';
+                    if (hasBody) html += '<span class="news-item-expand">▼</span>';
+                    html += '</div>';
+                    if (hasBody) {
+                        html += '<div class="news-item-body">' + escapeHtml(bodyPart) + '</div>';
+                    }
+                    html += '</div>';
+                }
             });
         }
         html += '</div>';
@@ -488,39 +550,121 @@ function calcRSI(closes, period) {
 }
 
 // ── History ──────────────────────────────────────────
-var HISTORY_KEY = 'quant-history';
-function saveToHistory(data) {
+function getHistoryKey() {
+    if (activeTab === 'dual') return 'quant-history-dual';
+    return 'quant-history-single';
+}
+function saveToHistory(data, status, snippet, dataSummary) {
     var entries = loadHistory();
     var ds = new Date().toISOString().slice(0, 10);
-    var snippet = (data.report || '').replace(/\*\*/g, '').slice(0, 80);
-    entries.unshift({ symbol: data.symbol, name: data.name, date: ds, snippet: snippet, data: data });
+    var entrySnippet = snippet || (data && data.report ? data.report.replace(/\*\*/g, '').slice(0, 80) : '');
+    entries.unshift({
+        symbol: data.symbol,
+        name: data.name,
+        date: ds,
+        snippet: entrySnippet,
+        status: status || 'done',
+        data: data,
+        data_summary: dataSummary || null
+    });
     var seen = {};
     entries = entries.filter(function (e) { var k = e.symbol + e.date; if (seen[k]) return false; seen[k] = true; return true; });
     if (entries.length > 50) entries = entries.slice(0, 50);
-    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(entries)); } catch (e) {}
+    try { localStorage.setItem(getHistoryKey(), JSON.stringify(entries)); } catch (e) {}
     renderHistoryList();
 }
-function loadHistory() { try { var r = localStorage.getItem(HISTORY_KEY); return r ? JSON.parse(r) : []; } catch (e) { return []; } }
+function saveDualToHistory(data) {
+    var entries = loadHistory();
+    var ds = new Date().toISOString().slice(0, 10);
+    var snippet = 'Pearson: ' + data.pearson + ', ' + data.sync_level;
+    entries.unshift({
+        symbol: data.symbol_a + '/' + data.symbol_b,
+        name: (data.name_a || '') + ' vs ' + (data.name_b || ''),
+        date: ds,
+        snippet: snippet,
+        status: 'done',
+        data: data,
+        data_summary: null
+    });
+    var seen = {};
+    entries = entries.filter(function (e) { var k = e.symbol + e.date; if (seen[k]) return false; seen[k] = true; return true; });
+    if (entries.length > 50) entries = entries.slice(0, 50);
+    try { localStorage.setItem(getHistoryKey(), JSON.stringify(entries)); } catch (e) {}
+    renderHistoryList();
+}
+function updateHistoryEntry(symbol, updates) {
+    var entries = loadHistory();
+    for (var i = 0; i < entries.length; i++) {
+        if (entries[i].symbol === symbol && entries[i].status !== 'done') {
+            for (var k in updates) { if (updates.hasOwnProperty(k)) entries[i][k] = updates[k]; }
+            break;
+        }
+    }
+    try { localStorage.setItem(getHistoryKey(), JSON.stringify(entries)); } catch (e) {}
+    renderHistoryList();
+}
+function loadHistory() { try { var r = localStorage.getItem(getHistoryKey()); return r ? JSON.parse(r) : []; } catch (e) { return []; } }
 function renderHistoryList() {
     var entries = loadHistory(), container = document.getElementById('historyList');
     if (!container) return;
+    var titleEl = document.querySelector('.history-body h3');
+    if (titleEl) {
+        if (activeTab === 'dual') titleEl.textContent = '双股同步历史';
+        else titleEl.textContent = '单股查询历史';
+    }
     if (entries.length === 0) { container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.78rem;text-align:center;padding:16px;">暂无历史记录</div>'; return; }
     container.innerHTML = entries.map(function (e, i) {
-        return '<div class="history-item" onclick="loadHistoryEntry(' + i + ')"><div class="hi-head"><span class="hi-code">' + e.symbol + '</span><span class="hi-date">' + e.date + '</span></div><div class="hi-name">' + (e.name || '') + '</div><div class="hi-snippet">' + (e.snippet || '') + '</div></div>';
+        var statusHtml = e.status ? '<span class="hi-status ' + e.status + '">' + (e.status === 'reporting' ? 'AI推演中...' : e.status === 'fetching' ? '数据获取中' : e.status === 'done' ? '完成' : '异常') + '</span>' : '';
+        var snippetHtml = '';
+        if (e.status === 'done' && e.snippet) {
+            snippetHtml = '<div class="hi-snippet">' + escapeHtml(e.snippet) + '</div>';
+        } else if (!e.status || e.status === 'done') {
+            snippetHtml = '<div class="hi-snippet">' + escapeHtml(e.snippet || '') + '</div>';
+        }
+        var nameHtml = e.name ? '<div class="hi-name">' + escapeHtml(e.name) + '</div>' : '';
+        var dateHtml = e.date ? '<div class="hi-date">' + escapeHtml(e.date) + '</div>' : '';
+        return '<div class="history-item" onclick="loadHistoryEntry(' + i + ')">'
+            + '<div class="hi-head">'
+            + statusHtml
+            + '<span class="hi-code">' + escapeHtml(e.symbol || '') + '</span>'
+            + '<button class="hi-delete" onclick="event.stopPropagation();deleteHistoryEntry(' + i + ')" title="删除">&times;</button>'
+            + '</div>'
+            + dateHtml
+            + nameHtml
+            + snippetHtml
+            + '</div>';
     }).join('');
 }
 function loadHistoryEntry(idx) {
     var entries = loadHistory();
     if (idx < 0 || idx >= entries.length) return;
     var data = entries[idx].data; if (!data) return;
+    // Dual sync entry
+    if (data.symbol_a) {
+        switchTab('dual');
+        document.getElementById('dualInputA').value = data.symbol_a;
+        document.getElementById('dualInputB').value = data.symbol_b;
+        renderDualResult(data);
+        return;
+    }
+    // Single stock entry
     currentSymbol = data.symbol;
     switchTab('single');
     document.getElementById('symbolInput').value = data.symbol;
     document.getElementById('symbolInput2').value = data.symbol;
     showSingleResult();
     renderResult(data);
+    if (data.report) {
+        renderReport(data.report);
+    }
 }
-function clearAllHistory() { localStorage.removeItem(HISTORY_KEY); renderHistoryList(); }
+function clearAllHistory() { localStorage.removeItem(getHistoryKey()); renderHistoryList(); }
+function deleteHistoryEntry(idx) {
+    var entries = loadHistory();
+    entries.splice(idx, 1);
+    localStorage.setItem(getHistoryKey(), JSON.stringify(entries));
+    renderHistoryList();
+}
 
 // ── Helpers ──────────────────────────────────────────
 function showLoading(s) { document.getElementById('loading').classList.toggle('hidden', !s); }

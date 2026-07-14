@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from typing import Optional
 from dotenv import load_dotenv
 
 from src.models.agentic_quant import AgenticQuant
@@ -21,6 +22,11 @@ quant_engine = AgenticQuant(api_key=api_key) if api_key else None
 
 class AnalyzeRequest(BaseModel):
     symbol: str
+
+
+class ReportRequest(BaseModel):
+    symbol: str
+    data_summary: dict
 
 
 @app.get("/api/health")
@@ -47,6 +53,21 @@ async def analyze(req: AnalyzeRequest):
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
     return result
+
+
+@app.post("/api/report")
+async def get_report(req: ReportRequest):
+    if not quant_engine:
+        raise HTTPException(status_code=503, detail="引擎未初始化，请检查 DEEPSEEK_API_KEY")
+    symbol = req.symbol.strip()
+    if not symbol.isdigit() or len(symbol) != 6:
+        raise HTTPException(status_code=400, detail="请输入6位数字A股代码")
+    try:
+        report_text = quant_engine.get_report(symbol, req.data_summary)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"symbol": symbol, "report": report_text}
 
 
 @app.get("/api/kline/{code}")
@@ -87,7 +108,7 @@ async def get_news(date: str = None):
     if not quant_engine:
         raise HTTPException(status_code=503, detail="引擎未初始化")
     try:
-        result = quant_engine.fetch_official_news(date)
+        result = quant_engine.get_cached_news(date)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
