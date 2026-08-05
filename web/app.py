@@ -121,4 +121,9 @@ async def index():
 
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")
+
+@app.get("/favicon.ico")
+async def favicon_ico():
+    return FileResponse(os.path.join(static_dir, "favicon.svg"), media_type="image/svg+xml")
+
 app.mount("/static", StaticFiles(directory=static_dir), name="static")

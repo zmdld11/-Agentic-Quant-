@@ -3,19 +3,56 @@
     var saved = localStorage.getItem('quant-theme');
     var prefers = window.matchMedia('(prefers-color-scheme: dark)').matches;
     applyTheme(saved || (prefers ? 'dark' : 'light'));
-    var script = document.createElement('script');
-    script.src = 'https://cdn.bootcdn.net/ajax/libs/echarts/5.5.0/echarts.min.js';
-    script.onload = function () {
+    var urls = [
+        '/static/vendor/echarts.min.js',
+        'https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js',
+        'https://registry.npmmirror.com/echarts/5.5.0/files/dist/echarts.min.js'
+    ];
+    var idx = 0;
+    var loaded = false;
+
+    function finish() {
+        if (loaded) return;
+        loaded = true;
         var splash = document.getElementById('splash');
         if (splash) splash.classList.add('done');
         setTimeout(function () { if (splash) splash.remove(); }, 600);
         renderHistoryList();
-    };
-    script.onerror = function () {
+    }
+
+    function fail() {
         var splash = document.getElementById('splash');
-        if (splash) { splash.querySelector('p').textContent = 'CDN 加载失败，请刷新重试'; }
-    };
-    document.head.appendChild(script);
+        if (splash) { splash.querySelector('p').textContent = '图表库加载失败，请刷新重试'; }
+    }
+
+    function loadNext() {
+        if (idx >= urls.length) { fail(); return; }
+        var script = document.createElement('script');
+        script.src = urls[idx++];
+        var done = false;
+        var timer = setTimeout(function () {
+            if (!done) {
+                done = true;
+                if (script.parentNode) script.parentNode.removeChild(script);
+                loadNext();
+            }
+        }, 15000);
+        script.onload = function () {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            finish();
+        };
+        script.onerror = function () {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            loadNext();
+        };
+        document.head.appendChild(script);
+    }
+
+    loadNext();
 })();
 
 // ── State ────────────────────────────────────────────
