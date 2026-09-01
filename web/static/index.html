@@ -25,6 +25,7 @@
             <button class="tab-btn active" data-tab="single">单股分析</button>
             <button class="tab-btn" data-tab="dual">双股同步</button>
             <button class="tab-btn" data-tab="news">官媒报道</button>
+            <button class="tab-btn" data-tab="cockpit">🚀 驾驶舱</button>
         </nav>
         <div class="header-actions">
             <a href="https://github.com/zmdld11/-Agentic-Quant-" target="_blank" class="github-btn" title="GitHub">
@@ -55,6 +56,11 @@
                         <span class="home-card-icon">📰</span>
                         <h3>官媒报道</h3>
                         <p>查阅当日官方政策与行业动态</p>
+                    </div>
+                    <div class="home-card" onclick="switchTab('cockpit')">
+                        <span class="home-card-icon">🚀</span>
+                        <h3>驾驶舱</h3>
+                        <p>模拟盘对账 + LLM市场情绪温度计</p>
                     </div>
                 </div>
                 <p class="home-footer">⚠️ 仅供参考，不构成投资建议</p>
@@ -141,6 +147,36 @@
         <div id="newsLoading" class="loading hidden"><div class="spinner"></div><p>加载中...</p></div>
         <div id="newsError" class="error hidden"></div>
         <div id="newsContent" class="news-content"></div>
+    </div>
+
+    <!-- ====== 驾驶舱 ====== -->
+    <div id="pageCockpit" class="page hidden">
+        <div class="cockpit-wrap">
+            <h2 class="cockpit-title">🚀 投研驾驶舱</h2>
+
+            <!-- 模拟盘 -->
+            <h3 class="cockpit-section">📊 S4 波动率目标轮动 · 模拟盘对账</h3>
+            <div id="cockpitPaperMsg" class="cockpit-msg hidden"></div>
+            <div id="paperCards" class="dual-cards"></div>
+            <div id="navChart" class="chart-container cockpit-chart"></div>
+            <div id="paperTrades" class="cockpit-trades"></div>
+
+            <!-- 情绪 -->
+            <h3 class="cockpit-section">🌡️ A股市场情绪温度计（财联社电报 × DeepSeek）</h3>
+            <div id="cockpitSentMsg" class="cockpit-msg hidden"></div>
+            <div id="sentimentBody" class="cockpit-sentiment">
+                <div class="cockpit-thermo">
+                    <div id="thermoValue" class="thermo-value">--</div>
+                    <div id="thermoDesc" class="thermo-desc"></div>
+                    <div id="thermoStats" class="thermo-stats"></div>
+                </div>
+                <div class="cockpit-lists">
+                    <div class="cockpit-list"><h4>最看多</h4><ul id="bullList"></ul></div>
+                    <div class="cockpit-list"><h4>最看空</h4><ul id="bearList"></ul></div>
+                </div>
+            </div>
+            <p class="cockpit-note">⚠️ 研究信号而非投资建议；情绪面板随每日 news --collect 自动更新，净值随每日 paper --refresh 生长。</p>
+        </div>
     </div>
 
     <!-- 历史记录侧边栏 -->

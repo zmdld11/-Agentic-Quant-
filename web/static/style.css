@@ -337,3 +337,27 @@ body {
     .report { padding: 20px 16px; }
     .footer { padding-right: 60px; }
 }
+
+/* ── 驾驶舱 ────────────────────────────────────────── */
+.cockpit-wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 40px; }
+.cockpit-title { margin: 4px 0 18px; font-size: 22px; }
+.cockpit-section { margin: 26px 0 12px; font-size: 17px; border-left: 4px solid #4a7cff; padding-left: 10px; }
+.cockpit-msg { padding: 14px; border-radius: 8px; background: rgba(255,193,7,.12); color: #b58900; }
+.cockpit-chart { height: 380px; margin-top: 14px; }
+.cockpit-trades { margin-top: 14px; }
+.cockpit-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cockpit-table th, .cockpit-table td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border, #e5e7eb); }
+.cockpit-table th { opacity: .65; font-weight: 500; }
+.cockpit-sentiment { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.cockpit-thermo { flex: 0 0 280px; text-align: center; padding: 22px 16px; border-radius: 12px; background: var(--card, rgba(0,0,0,.03)); }
+.thermo-value { font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.thermo-desc { margin-top: 6px; font-size: 13px; opacity: .75; }
+.thermo-stats { margin-top: 8px; font-size: 13px; }
+.cockpit-lists { flex: 1 1 420px; display: flex; gap: 16px; }
+.cockpit-list { flex: 1; }
+.cockpit-list h4 { margin: 4px 0 8px; font-size: 14px; }
+.cockpit-list ul { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+.cockpit-list li { padding: 6px 0; border-bottom: 1px dashed var(--border, #e5e7eb); line-height: 1.5; }
+.score-pos { color: #e0562f; font-weight: 600; margin-right: 4px; }
+.score-neg { color: #1a7f37; font-weight: 600; margin-right: 4px; }
+.cockpit-note { margin-top: 18px; font-size: 12px; opacity: .6; }

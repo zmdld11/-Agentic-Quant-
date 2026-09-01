@@ -45,7 +45,12 @@ def cmd_agent(args: argparse.Namespace) -> None:
             continue
         print(f"\n[系统已接收指令] 开始深度扫描并推演: {symbol}")
         result = agent.compile_and_predict(symbol=symbol)
-        print(result.get("error", result["report"]))
+        if "error" in result:
+            print(f"❌ {result['error']}")
+            continue
+        # 引擎为两段式：先汇编数据，再生成研报（与 Web 端 /api/analyze + /api/report 一致）
+        report = agent.get_report(symbol, result["data_summary"])
+        print(report)
         print("\n" + "-" * 40)
 
 

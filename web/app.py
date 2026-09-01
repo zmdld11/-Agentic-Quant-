@@ -114,6 +114,78 @@ async def get_news(date: str = None):
         raise HTTPException(status_code=500, detail=str(e))
     return result
 
+
+# ── 驾驶舱：量化管线的数据产物（模拟盘账户 + LLM情绪面板）──────────────
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PAPER_STATE = os.path.join(ROOT, "data", "processed", "paper_account.json")
+SENTIMENT_PANEL = os.path.join(ROOT, "data", "processed", "sentiment_panel.parquet")
+TELEGRAPH = os.path.join(ROOT, "data", "raw", "news", "cls_telegraph.parquet")
+
+
+@app.get("/api/paper")
+async def get_paper():
+    """模拟盘对账数据：净值/持仓/调仓记录 + 沪深300基准曲线。"""
+    import json as _json
+    if not os.path.exists(PAPER_STATE):
+        return {"available": False, "message": "模拟盘未开账：先运行 python main.py paper"}
+    with open(PAPER_STATE, encoding="utf-8") as f:
+        state = _json.load(f)
+    initial = 1_000_000.0
+    nav = float(state.get("nav", initial))
+    # 基准：自开档日的沪深300ETF收盘曲线（读本地缓存，无缓存则省略）
+    benchmark = []
+    try:
+        import pandas as pd
+        from quant.preprocess import load_bars
+        bars = load_bars("510300", "etf", start=state.get("inception", "2016-01-01"))
+        closes = bars["close"] / bars["close"].iloc[0]
+        benchmark = [{"date": d.strftime("%Y-%m-%d"), "nav": round(float(v), 4)}
+                     for d, v in closes.items()]
+    except Exception:
+        pass
+    pos = state.get("position")
+    return {
+        "available": True,
+        "inception": state.get("inception"),
+        "nav": nav,
+        "total_return": nav / initial - 1,
+        "benchmark_return": (benchmark[-1]["nav"] - 1) if benchmark else None,
+        "excess": (nav / initial) - (benchmark[-1]["nav"] if benchmark else 1),
+        "position": pos,
+        "trades": list(reversed(state.get("trades", [])))[:12],
+        "nav_history": state.get("nav_history", []),
+        "benchmark": benchmark,
+        "note": "净值曲线随每日结算自动生长；回测版本(含成本)见 results/",
+    }
+
+
+@app.get("/api/sentiment")
+async def get_sentiment():
+    """LLM情绪面板：温度计 + 多空快讯榜 + 近期走势。"""
+    if not (os.path.exists(SENTIMENT_PANEL) and os.path.exists(TELEGRAPH)):
+        return {"available": False, "message": "情绪面板不存在：先运行 python main.py news --collect"}
+    import pandas as pd
+    panel = pd.read_parquet(SENTIMENT_PANEL)
+    tele = pd.read_parquet(TELEGRAPH)
+    scored = tele[tele["score"].notna()]
+    if scored.empty:
+        return {"available": False, "message": "尚无打分样本：配置 LLM_API_KEY 后运行 news --collect"}
+    recent = panel.dropna(subset=["mean_score"]).tail(30)
+    def _rows(df):
+        return [{"title": str(t)[:60], "score": round(float(s), 2)}
+                for t, s in zip(df["title"], df["score"])]
+    return {
+        "available": True,
+        "thermometer": round(float(scored["score"].tail(30).mean()), 3),
+        "bull_pct": float((scored["score"] > 0.1).mean()),
+        "bear_pct": float((scored["score"] < -0.1).mean()),
+        "top_bull": _rows(scored.nlargest(5, "score")),
+        "top_bear": _rows(scored.nsmallest(5, "score")),
+        "trend": [{"date": str(d)[:10], "score": round(float(v), 3)}
+                  for d, v in zip(recent["date"], recent["mean_score"])],
+        "n_scored": int(len(scored)),
+    }
+
 @app.get("/")
 async def index():
     static_dir = os.path.join(os.path.dirname(__file__), "static")

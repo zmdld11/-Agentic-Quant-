@@ -66,6 +66,7 @@ var newsDateOffset = 0;
 // ── ECharts ──────────────────────────────────────────
 var klineChart, volumeChart, macdChart, rsiChart;
 var overlayChart, scatterChart;
+var cockpitNavChart;
 var chartsReady = false;
 
 function initCharts() {
@@ -95,7 +96,7 @@ function initCharts() {
 }
 
 function resizeAllCharts() {
-    [klineChart, volumeChart, macdChart, rsiChart, overlayChart, scatterChart].forEach(function (c) {
+    [klineChart, volumeChart, macdChart, rsiChart, overlayChart, scatterChart, cockpitNavChart].forEach(function (c) {
         if (c) c.resize();
     });
 }
@@ -120,7 +121,7 @@ var singleResultShown = false;
 function switchTab(tab) {
     activeTab = tab;
     var header = document.getElementById('appHeader');
-    ['Home', 'Single', 'Dual', 'News'].forEach(function (t) {
+    ['Home', 'Single', 'Dual', 'News', 'Cockpit'].forEach(function (t) {
         var el = document.getElementById('page' + t);
         if (el) el.classList.toggle('hidden', t.toLowerCase() !== tab);
     });
@@ -144,6 +145,7 @@ function switchTab(tab) {
     if (tab === 'news') loadNews();
     if (tab === 'dual') { chartsReady = false; }
     if (tab === 'single' && singleState === 'init') resetSingleInit();
+    if (tab === 'cockpit') loadCockpit();
     renderHistoryList();
     resizeAllCharts();
 }
@@ -708,3 +710,105 @@ function showLoading(s) { document.getElementById('loading').classList.toggle('h
 function showError(m) { var e = document.getElementById('error'); if (e) { e.textContent = m; e.classList.remove('hidden'); } }
 function hideError() { var e = document.getElementById('error'); if (e) e.classList.add('hidden'); }
 function hideReport() { var e = document.getElementById('report'); if (e) e.classList.add('hidden'); }
+
+// ── 驾驶舱（模拟盘 + 情绪温度计）─────────────────────────
+function pct(x, digits) {
+    if (x === null || x === undefined || isNaN(x)) return '--';
+    return (x >= 0 ? '+' : '') + (x * 100).toFixed(digits === undefined ? 2 : digits) + '%';
+}
+function loadCockpit() {
+    loadCockpitPaper();
+    loadCockpitSentiment();
+}
+
+function loadCockpitPaper() {
+    var msg = document.getElementById('cockpitPaperMsg');
+    fetch('/api/paper').then(function (r) { return r.json(); }).then(function (d) {
+        var cards = document.getElementById('paperCards');
+        var tradesEl = document.getElementById('paperTrades');
+        if (!d.available) {
+            msg.textContent = d.message || '模拟盘数据不可用';
+            msg.classList.remove('hidden');
+            cards.innerHTML = ''; tradesEl.innerHTML = '';
+            return;
+        }
+        msg.classList.add('hidden');
+        var pos = d.position;
+        var posText = pos ? (pos.symbol + ' ' + Math.round(pos.weight * 100) + '%仓 · ' + pos.entry_date + ' 建仓')
+                          : '空仓持币';
+        cards.innerHTML =
+            '<div class="dual-card"><span class="dual-label">累计收益（自 ' + d.inception + '）</span><span class="dual-value">' + pct(d.total_return) + '</span></div>' +
+            '<div class="dual-card"><span class="dual-label">同期沪深300ETF</span><span class="dual-value">' + pct(d.benchmark_return) + '</span></div>' +
+            '<div class="dual-card"><span class="dual-label">超额收益</span><span class="dual-value">' + pct(d.excess) + '</span></div>' +
+            '<div class="dual-card"><span class="dual-label">当前持仓</span><span class="dual-value" style="font-size:15px">' + posText + '</span></div>';
+
+        // 净值曲线：模拟盘（逐日生长） vs 基准
+        var el = document.getElementById('navChart');
+        if (!cockpitNavChart) cockpitNavChart = echarts.init(el);
+        var hist = d.nav_history || [];
+        cockpitNavChart.setOption({
+            tooltip: { trigger: 'axis' },
+            legend: { data: ['模拟盘净值', '沪深300ETF'] },
+            grid: { left: 50, right: 20, top: 40, bottom: 30 },
+            xAxis: { type: 'category', data: (d.benchmark || []).map(function (p) { return p.date; }) },
+            yAxis: { type: 'value', scale: true },
+            series: [
+                { name: '模拟盘净值', type: 'line', showSymbol: hist.length < 30,
+                  data: (d.benchmark || []).map(function (p) {
+                      var hit = null;
+                      hist.forEach(function (h) { if (h.date === p.date) hit = +(h.nav / 1000000).toFixed(4); });
+                      return hit;
+                  }), connectNulls: true, lineStyle: { width: 2.5 } },
+                { name: '沪深300ETF', type: 'line', showSymbol: false,
+                  data: (d.benchmark || []).map(function (p) { return p.nav; }),
+                  lineStyle: { width: 1.2, opacity: 0.8 } }
+            ]
+        }, true);
+
+        // 最近调仓表
+        if ((d.trades || []).length) {
+            var rows = d.trades.map(function (t) {
+                return '<tr><td>' + t.exec_date + '</td><td>' + t.name + '</td><td>' +
+                       Math.round(t.weight * 100) + '%</td></tr>';
+            }).join('');
+            tradesEl.innerHTML = '<h4>最近调仓</h4><table class="cockpit-table"><tr><th>执行日</th><th>标的</th><th>仓位</th></tr>' + rows + '</table>';
+        } else {
+            tradesEl.innerHTML = '';
+        }
+    }).catch(function (e) {
+        msg.textContent = '加载模拟盘失败: ' + e;
+        msg.classList.remove('hidden');
+    });
+}
+
+function loadCockpitSentiment() {
+    var msg = document.getElementById('cockpitSentMsg');
+    fetch('/api/sentiment').then(function (r) { return r.json(); }).then(function (d) {
+        var body = document.getElementById('sentimentBody');
+        if (!d.available) {
+            msg.textContent = d.message || '情绪数据不可用';
+            msg.classList.remove('hidden');
+            body.style.display = 'none';
+            return;
+        }
+        msg.classList.add('hidden');
+        body.style.display = 'flex';
+        var t = d.thermometer;
+        var desc = t > 0.3 ? '偏贪婪' : (t < -0.3 ? '偏恐慌' : '中性');
+        var color = t > 0.1 ? '#e0562f' : (t < -0.1 ? '#1a7f37' : '#8b949e');
+        document.getElementById('thermoValue').textContent = (t >= 0 ? '+' : '') + t.toFixed(3);
+        document.getElementById('thermoValue').style.color = color;
+        document.getElementById('thermoDesc').textContent = desc + '（-1恐慌 ~ +1贪婪）';
+        document.getElementById('thermoStats').textContent =
+            '看多 ' + Math.round(d.bull_pct * 100) + '% / 看空 ' + Math.round(d.bear_pct * 100) + '% · ' + d.n_scored + ' 条样本';
+        document.getElementById('bullList').innerHTML = d.top_bull.map(function (x) {
+            return '<li><span class="score-pos">' + (x.score >= 0 ? '+' : '') + x.score.toFixed(2) + '</span> ' + x.title + '</li>';
+        }).join('');
+        document.getElementById('bearList').innerHTML = d.top_bear.map(function (x) {
+            return '<li><span class="score-neg">' + (x.score >= 0 ? '+' : '') + x.score.toFixed(2) + '</span> ' + x.title + '</li>';
+        }).join('');
+    }).catch(function (e) {
+        msg.textContent = '加载情绪数据失败: ' + e;
+        msg.classList.remove('hidden');
+    });
+}
