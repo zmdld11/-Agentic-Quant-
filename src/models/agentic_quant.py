@@ -6,6 +6,11 @@ from datetime import datetime, timedelta
 from openai import OpenAI
 import time
 import threading
+import os
+
+# 数据源均为国内站点：本地 Windows 调试时防注册表代理劫持（服务器上无影响）
+os.environ.setdefault("NO_PROXY", "*")
+
 
 class AgenticQuant:
     '''单日推演智能体 (LLM Agentic Quant)
