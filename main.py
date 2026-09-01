@@ -97,6 +97,24 @@ def cmd_summary(args: argparse.Namespace) -> None:
     summary.run()
 
 
+def cmd_wq101(args: argparse.Namespace) -> None:
+    from quant import alphas
+    alphas.run_research(start=args.start, split=args.split)
+
+
+def cmd_news(args: argparse.Namespace) -> None:
+    from quant import news
+    if args.selftest:
+        news.self_test()
+        return
+    if args.collect:
+        news.collect(max_llm_calls=args.max_calls)
+    if args.digest:
+        news.digest()
+    if not args.collect and not args.digest:
+        print("用法: python main.py news --collect / --digest / --selftest")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="A股量化回测 · 学习项目")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -175,6 +193,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_sum = sub.add_parser("summary", help="全策略同窗总览（图+表）")
     p_sum.set_defaults(func=cmd_summary)
+
+    p_wq = sub.add_parser("wq101", help="研究：WorldQuant 101因子精选 · 训练/测试IC验尸")
+    p_wq.add_argument("--start", default="2019-01-01")
+    p_wq.add_argument("--split", default="2023-01-01", help="训练/测试分割点")
+    p_wq.set_defaults(func=cmd_wq101)
+
+    p_news = sub.add_parser("news", help="LLM情绪管线：财联社电报→打分→市场情绪面板/温度计")
+    p_news.add_argument("--collect", action="store_true", help="采集(+打分,需 LLM_API_KEY)并更新面板")
+    p_news.add_argument("--digest", action="store_true", help="输出今日市场情绪温度计")
+    p_news.add_argument("--max-calls", type=int, default=5, help="单轮LLM调用上限(成本护栏)")
+    p_news.add_argument("--selftest", action="store_true", help="解析器自测(无需API key)")
+    p_news.set_defaults(func=cmd_news)
     return parser
 
 

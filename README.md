@@ -35,6 +35,8 @@
 .venv/Scripts/python.exe main.py factors --download  # 11. 策略5：横截面因子选股（首次需下载成分股数据）
 .venv/Scripts/python.exe main.py signal    # 12. 模拟盘信号器：S4 当前持仓建议（收盘后加 --refresh）
 .venv/Scripts/python.exe main.py summary   # 13. 全策略同窗总览（图+表）
+.venv/Scripts/python.exe main.py wq101     # 14. 研究：WorldQuant 101因子 A股验尸
+.venv/Scripts/python.exe main.py news --collect --digest  # 15. LLM情绪管线（需配置 LLM_API_KEY 打分）
 # 结果都在 results/ 下：图 + 交易流水 + 报告；实验结论在 research/
 ```
 
@@ -55,6 +57,8 @@ quant/             核心包，建议按此顺序读：
   factors.py        横截面因子研究：IC 检验、分组回测、TopN 组合
   live.py           模拟盘信号器：S4 规则输出当前持仓建议并记日志
   summary.py        全策略同窗总览（对比图+表）
+  alphas.py         WorldQuant 101 算子库与 28 个公式因子（A股验尸研究）
+  news.py           LLM 情绪管线：财联社电报 → 打分 → 市场情绪温度计
 strategies/        每个策略一个文件：
   s1_ma_cross.py    双均线（趋势入门；已被 walk-forward 证伪，留作教材）
   s2_momentum.py    ETF 动量轮动（跨资产配置）
@@ -101,6 +105,20 @@ main.py            命令行入口
   （大波动后往往还有大波动）自动减仓，S4 实测回撤 -39.7%→-24.9%、夏普 +0.1。
 - **Walk-Forward**：滚动"用过去N年选参→只交易下一年"，拼出的净值是整套流程的
   真实样本外成绩。S1 双均线实测：每年重选参数 ≈ 不选（年化 -0.6%），被证伪弃用。
+- **alpha 衰减**：因子一旦公开就会被交易到消失。WQ101（2015 公开）实测：
+  训练期过 IC 门槛的 4 个因子，测试期存活 0 个；但"因子间相对排序"仍有信息
+  （训练/测试秩相关 0.50）——水平会死，排序半衰期更长。
+- **LLM 情绪因子**：让 LLM 给新闻打分当因子（Lopez-Lira, JFE 验证有预测力）。
+  本项目 A 股版管线已建好（`news` 命令），因新闻源无历史存档，采用前瞻采集模式。
+
+## 环境变量（LLM 情绪管线）
+
+```bash
+export LLM_API_KEY="你的key"     # 启用打分必填；智谱开放平台或任意 OpenAI 兼容端点
+export LLM_BASE_URL="https://open.bigmodel.cn/api/paas/v4"  # 默认智谱
+export LLM_MODEL="glm-4-flash"   # 默认便宜够用的闪速版
+```
+无 key 时 `news --collect` 仍会采集缓存电报，只是跳过打分。
 
 ## 学习路线
 
@@ -119,7 +137,10 @@ main.py            命令行入口
 | 6a | 网格策略（中证500 年化 8.1% 碾压持有 2.8%；券商标的经历两种经典死法） | ✅ |
 | 6b | S4 top1→top2 分散实验（分散无优势：池内资产高相关） | ✅ |
 | 6c | 模拟盘信号器（`signal` 命令，2026-09-01 开档：黄金ETF 62%） | ✅ |
-| 7 | 模拟盘跟踪对账、point-in-time 成分股、S4 池子扩展 | ⬜ 长期 |
+| 7a | 外部调研（LLM多智能体/因子挖掘/TSFM 全景 → research 笔记） | ✅ |
+| 7b | WQ101 因子搬家+验尸（28因子全算通；训练期过线 4 个→测试期存活 0 个） | ✅ |
+| 7c | LLM 情绪管线（电报→打分→温度计；无历史数据只能前瞻采集，面板已开档） | ✅ |
+| 8 | 情绪面板攒够后的 IC 检验、Chronos 波动率接入 S4、模拟盘对账 | ⬜ 长期 |
 
 ## 数据来源
 
@@ -141,6 +162,14 @@ main.py            命令行入口
   改用 **baostock**（一次登录连续查询）+ 3 进程分段并行 → ~1.2 秒/只。
   baostock 连接也可能中途失效（表现为整段快速失败），重跑该段即可（已成功的走缓存）。
 - **argparse help 里的 `%` 要写成 `%%`**，否则构造 parser 直接抛 badly formed help string。
+- **akshare 内部正则 × pandas3/pyarrow 崩溃**：stock_news_em 的清洗代码用
+  `\u3000` 正则，pyarrow 的 RE2 引擎不认 `\u` 转义直接抛 ArrowInvalid。
+  pandas 3.0 的字符串列默认走 pyarrow，遇到老库的 str.replace 正则要当心。
+- **东财个股新闻搜索接口服务端变更**（2026-09）：任何关键词只返回用户区
+  （passportWeb）不返回新闻区，cookie/referer/scope 各种变体均无效 → 弃用，
+  情绪管线改走财联社电报（stock_info_global_cls，全市场级）。
+- **akshare 接口名会骗人**：`stock_news_main_cx`、`index_news_sentiment_scope`
+  名字像个股/历史数据，实际都是无参当日快照。用前先看签名。
 
 - **Python 3.14 太新**：已实测 numpy 2.5 / pandas 3.0 / akshare 1.18 / pyarrow 25 全部可用。
   若未来新装依赖失败，备选方案：装 Python 3.12 重建 `.venv`。

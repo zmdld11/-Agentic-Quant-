@@ -58,6 +58,30 @@ def load_closes(start: str = "2016-06-01", end: str | None = None,
     return closes
 
 
+def load_wide_panel(start: str = "2016-06-01", end: str | None = None,
+                    min_days: int = 250) -> dict[str, pd.DataFrame]:
+    """读全部成分股的 OHLCV+成交额，拼成 {字段: date×code 宽表}。
+
+    供 WorldQuant 式公式因子使用；vwap 用 (O+H+L+C)/4 近似——
+    成交额/成交量算出的是不复权均价，与后复权价格混用会破坏跨股可比性，
+    用 OHLC 均值近似则与价格同口径（自洽且截面可比）。
+    """
+    files = sorted(DATA_DIR.glob("stock_*.parquet"))
+    if len(files) < 50:
+        raise RuntimeError("成分股数据不足：先运行 python main.py factors --download")
+    fields = ("open", "high", "low", "close", "volume", "amount")
+    cols: dict[str, dict[str, pd.Series]] = {f: {} for f in fields}
+    for f in files:
+        code = f.stem.replace("stock_", "")
+        df = pd.read_parquet(f)
+        if len(df) < min_days:
+            continue
+        for field in fields:
+            cols[field][code] = df[field]
+    panel = {field: pd.DataFrame(d).loc[start: end] for field, d in cols.items()}
+    return panel
+
+
 def month_end_factors(closes: pd.DataFrame) -> dict[str, pd.DataFrame]:
     """各因子的月末快照（date × code）。"""
     ret = closes.pct_change()
@@ -70,10 +94,19 @@ def month_end_factors(closes: pd.DataFrame) -> dict[str, pd.DataFrame]:
 def compute_ics(closes: pd.DataFrame, start: str = "2019-01-01",
                 min_stocks: int = 50) -> pd.DataFrame:
     """逐月计算各因子的秩相关 IC（因子分 vs 下月收益）。"""
+    return ics_from_frames(month_end_factors(closes), closes, start, min_stocks)
+
+
+def ics_from_frames(month_factors: dict[str, pd.DataFrame], closes: pd.DataFrame,
+                    start: str = "2019-01-01", min_stocks: int = 50) -> pd.DataFrame:
+    """通用版 IC 计算：传入任意"月末因子快照 dict"，逐月与下月收益做 Spearman。
+
+    WQ101 等自定义因子研究走这个入口（与 s5 用同一把尺子）。
+    """
     monthly = closes.resample("ME").last()
     fwd = (monthly.shift(-1) / monthly - 1).loc[start:]   # 下月收益，对齐在当月末行
     ic_cols = {}
-    for name, f in month_end_factors(closes).items():
+    for name, f in month_factors.items():
         f = f.loc[start:]
         ics = {}
         for date, row in f.iterrows():
