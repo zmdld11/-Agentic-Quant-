@@ -1,0 +1,12 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# 数据与回测产物（体积大且可重新生成，不入库）
+data/
+results/
+
+# ZCode 会话内部文件
+.zcode/
