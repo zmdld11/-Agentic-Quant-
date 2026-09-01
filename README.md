@@ -37,6 +37,7 @@
 .venv/Scripts/python.exe main.py summary   # 13. 全策略同窗总览（图+表）
 .venv/Scripts/python.exe main.py wq101     # 14. 研究：WorldQuant 101因子 A股验尸
 .venv/Scripts/python.exe main.py news --collect --digest  # 15. LLM情绪管线（需配置 LLM_API_KEY 打分）
+.venv/Scripts/python.exe main.py paper     # 16. 模拟盘账户：补账+结算+对账单（日常主命令）
 # 结果都在 results/ 下：图 + 交易流水 + 报告；实验结论在 research/
 ```
 
@@ -110,6 +111,47 @@ main.py            命令行入口
   （训练/测试秩相关 0.50）——水平会死，排序半衰期更长。
 - **LLM 情绪因子**：让 LLM 给新闻打分当因子（Lopez-Lira, JFE 验证有预测力）。
   本项目 A 股版管线已建好（`news` 命令），因新闻源无历史存档，采用前瞻采集模式。
+
+## 日常使用手册（这个项目每天/每月怎么用）
+
+| 频率 | 命令 | 做什么 |
+|---|---|---|
+| 每个交易日收盘后 | `main.py news --collect --digest` | 采集电报→DeepSeek打分→市场情绪温度计（攒面板） |
+| 每天/随时 | `main.py paper --refresh` | 模拟盘补账+结算：自动处理月末信号、按最新收盘出对账单（幂等，忘跑几天会自动追账） |
+| 每月底收盘后 | `main.py signal --refresh` | 看下月起 S4 的持仓建议（只打印建议，paper 才是账） |
+| 想看全局时 | `main.py summary` | 全策略同窗总览 |
+
+**长线模拟的原理**：`paper` 维护一个虚拟账户（初始 100 万），每个月末信号在次月
+首个交易日开盘自动"调仓"，净值与调仓记录存 `data/processed/paper_account.json`。
+它已把 2016 年以来全部信号补齐（+174.9% vs 沪深300 +56.5%，与回测的差距
+≈ 交易成本 4%/年，口径自洽）；从现在起每天 `--refresh` 结算，就是纯前瞻记录——
+**回测说这套规则能赢，模拟盘用真行情逐一兑现或证伪它**。
+
+## 服务器部署（2核2G 阿里云跑得动吗？）
+
+**结论：日常任务绰绰有余，重型研究也能跑但建议错峰。**
+
+| 任务 | 内存峰值 | 评估 |
+|---|---|---|
+| news / paper / signal（日常三件套） | <150MB | ✅ 无压力 |
+| 批量下载 300 只成分股（baostock） | <200MB | ✅ 一次性，~20 分钟 |
+| WQ101 / 因子研究 | ~600MB-1GB | ⚠️ 能跑（2-3 分钟），建议加 1G swap 保险，避开其他任务 |
+
+部署步骤（Ubuntu，Python 3.11/3.12 均可）：
+
+```bash
+sudo apt install python3-venv fonts-noto-cjk        # 中文字体必装（否则图表变方框）
+git clone <你的仓库> ~/quant && cd ~/quant
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp .env ~/quant/.env                                # 密钥文件手动拷（不进git）
+crontab -e                                          # 定时任务：
+#   30 17 * * 1-5  cd ~/quant && .venv/bin/python main.py news --collect >> logs/news.log 2>&1
+#   45 17 * * 1-5  cd ~/quant && .venv/bin/python main.py paper --refresh >> logs/paper.log 2>&1
+```
+
+说明：数据缓存（data/）在本地和服务器间可以直接 rsync 拷贝同步；
+服务器无需 NO_PROXY 的坑（那是 Windows 注册表代理的问题）；阿里云有公网，
+akshare/baostock/DeepSeek API 都能直连。
 
 ## LLM 情绪管线配置（密钥不进 git）
 

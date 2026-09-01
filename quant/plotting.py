@@ -15,8 +15,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-# Windows 自带中文字体，解决 matplotlib 中文乱码
-plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei"]
+# 中文字体：Windows 用雅黑；Linux 服务器回退到 Noto/文泉驿（无中文字体会画方框）
+plt.rcParams["font.sans-serif"] = [
+    "Microsoft YaHei", "SimHei", "Noto Sans CJK SC", "WenQuanYi Micro Hei"]
 plt.rcParams["axes.unicode_minus"] = False
 
 

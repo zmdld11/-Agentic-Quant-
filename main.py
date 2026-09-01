@@ -92,6 +92,11 @@ def cmd_signal(args: argparse.Namespace) -> None:
     s4_signal(refresh=args.refresh)
 
 
+def cmd_paper(args: argparse.Namespace) -> None:
+    from quant import paper
+    paper.run(refresh=args.refresh)
+
+
 def cmd_summary(args: argparse.Namespace) -> None:
     from quant import summary
     summary.run()
@@ -190,6 +195,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_sig = sub.add_parser("signal", help="模拟盘信号器：S4 当前持仓建议（收盘后 --refresh）")
     p_sig.add_argument("--refresh", action="store_true", help="先刷新ETF数据")
     p_sig.set_defaults(func=cmd_signal)
+
+    p_paper = sub.add_parser("paper", help="模拟盘账户：自动补账+结算+对账单（幂等可日跑）")
+    p_paper.add_argument("--refresh", action="store_true", help="先刷新ETF数据（收盘后用）")
+    p_paper.set_defaults(func=cmd_paper)
 
     p_sum = sub.add_parser("summary", help="全策略同窗总览（图+表）")
     p_sum.set_defaults(func=cmd_summary)
