@@ -209,6 +209,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    from quant.config import load_env
+    load_env()   # 从 .env 读取密钥等本地配置（不入库）
     args = build_parser().parse_args()
     args.func(args)
 

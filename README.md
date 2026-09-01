@@ -111,14 +111,19 @@ main.py            命令行入口
 - **LLM 情绪因子**：让 LLM 给新闻打分当因子（Lopez-Lira, JFE 验证有预测力）。
   本项目 A 股版管线已建好（`news` 命令），因新闻源无历史存档，采用前瞻采集模式。
 
-## 环境变量（LLM 情绪管线）
+## LLM 情绪管线配置（密钥不进 git）
 
-```bash
-export LLM_API_KEY="你的key"     # 启用打分必填；智谱开放平台或任意 OpenAI 兼容端点
-export LLM_BASE_URL="https://open.bigmodel.cn/api/paas/v4"  # 默认智谱
-export LLM_MODEL="glm-4-flash"   # 默认便宜够用的闪速版
+密钥放在项目根目录的 **`.env`** 文件里（已被 .gitignore 排除，`quant/config.py`
+在启动时自动加载，shell 里 export 过的变量优先）：
+
 ```
-无 key 时 `news --collect` 仍会采集缓存电报，只是跳过打分。
+LLM_API_KEY=sk-xxx
+LLM_BASE_URL=https://api.deepseek.com/v1   # 任意 OpenAI 兼容端点
+LLM_MODEL=deepseek-chat
+```
+
+当前已配置 DeepSeek。换服务商只改这三行；无 key 时 `news --collect` 仍会采集
+缓存电报，只是跳过打分。**永远不要把 key 写进代码或提交进仓库**。
 
 ## 学习路线
 

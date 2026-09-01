@@ -69,6 +69,8 @@ class NewsScorer:
     )
 
     def __init__(self):
+        from quant.config import load_env
+        load_env()   # 直接 import 本模块（如测试）时也能拿到 .env 配置
         self.base_url = os.environ.get("LLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4").rstrip("/")
         self.api_key = os.environ.get("LLM_API_KEY", "")
         self.model = os.environ.get("LLM_MODEL", "glm-4-flash")

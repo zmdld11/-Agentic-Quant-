@@ -41,13 +41,22 @@
 ## 首日状态
 
 - 电报缓存 20 条（2026-09-01），面板开档第 1 天
-- 等待用户提供 LLM_API_KEY 后，第一条真实温度计即可产出
+- **已配置 DeepSeek（deepseek-chat，OpenAI 兼容端点），密钥存于 .env（gitignored）**
+- 语义抽测通过：降准+0.8 / 美联储观望-0.1 / 无关新品0.0
+- **第一份真实温度计（2026-09-01）：+0.030（中性略偏多）**，看多占比 25% / 看空 15%
+  - 最看多：全A非金融利润增速超营收(+0.3)、公募调研环比+150%(+0.3)
+  - 最看空：霍尔木兹海峡通行锐减(-0.3)、东山精密主力净卖出19亿(-0.2)
+- 之后每日收盘后跑 `news --collect --digest` 攒面板；积累 1-2 个月后做
+  温度计 vs 沪深300 次日收益的 IC 检验
 
-## 启用方法（给未来自己的备忘）
+## 配置方法（给未来自己的备忘）
 
+密钥在项目根目录 `.env`（不进 git，`quant/config.py` 自动加载）：
+```
+LLM_API_KEY=sk-xxx
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-chat
+```
 ```bash
-export LLM_API_KEY="你的key"          # 智谱开放平台或任意 OpenAI 兼容端点
-export LLM_BASE_URL="https://open.bigmodel.cn/api/paas/v4"  # 默认值
-export LLM_MODEL="glm-4-flash"        # 默认值
 .venv/Scripts/python.exe main.py news --collect --digest
 ```
