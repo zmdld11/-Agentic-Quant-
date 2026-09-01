@@ -26,9 +26,12 @@
 .venv/Scripts/python.exe main.py s1        # 2. 策略1：双均线（510300 + 茅台）
 .venv/Scripts/python.exe main.py s2        # 3. 策略2：ETF动量轮动（vs 沪深300 持有）
 .venv/Scripts/python.exe main.py s3        # 4. 策略3：均值回归（券商ETF + 300ETF）
-.venv/Scripts/python.exe main.py scan      # 5. 实验：参数扫描热图（看参数面形状）
-.venv/Scripts/python.exe main.py overfit   # 6. 实验：训练/测试分割过拟合检验（必看）
-.venv/Scripts/python.exe main.py showcase  # 7. "训练最优参数"在测试集的净值 vs 默认参数
+.venv/Scripts/python.exe main.py s4        # 5. 策略4：轮动+波动率目标仓位（风险预算）
+.venv/Scripts/python.exe main.py scan      # 6. 实验：参数扫描热图（看参数面形状）
+.venv/Scripts/python.exe main.py overfit   # 7. 实验：训练/测试分割过拟合检验（必看）
+.venv/Scripts/python.exe main.py showcase  # 8. "训练最优参数"在测试集的净值 vs 默认参数
+.venv/Scripts/python.exe main.py wf        # 9. 实验：Walk-Forward 滚动样本外验证
+.venv/Scripts/python.exe main.py factors --download  # 10. 策略5：横截面因子选股（首次需下载成分股数据）
 # 结果都在 results/ 下：图 + 交易流水 + 报告；实验结论在 research/
 ```
 
@@ -43,12 +46,16 @@ quant/             核心包，建议按此顺序读：
   engine.py         单标的回测引擎：T+1、涨跌停、一手100股、佣金/印花税/滑点、防前视偏差
   portfolio.py      多标的组合引擎：目标权重调仓（轮动类策略用）
   metrics.py        绩效：年化/波动/夏普/最大回撤/卡玛/回合胜率
-  plotting.py       净值曲线、回撤面积、参数热图、散点
+  plotting.py       净值曲线、回撤面积、参数热图、多线对比
   scan.py           参数扫描 + 训练/测试分割过拟合实验
+  walkforward.py    滚动样本外验证（walk-forward）
+  factors.py        横截面因子研究：IC 检验、分组回测、TopN 组合
 strategies/        每个策略一个文件：
-  s1_ma_cross.py    双均线（趋势入门）
+  s1_ma_cross.py    双均线（趋势入门；已被 walk-forward 证伪，留作教材）
   s2_momentum.py    ETF 动量轮动（跨资产配置）
   s3_mean_revert.py 布林带均值回归（超卖反弹）
+  s4_rotation_plus.py 轮动+波动率目标仓位（风险预算）
+  s5_factor.py      横截面多因子选股（IC/分组/TopN）
 strategies/        每个策略一个文件：s1_ma_cross（双均线）...
 research/          实验记录：每个策略每次实验的结论（像做题笔记）
 results/           回测输出（图/csv/报告），git 忽略
@@ -80,6 +87,14 @@ main.py            命令行入口
 - **动量效应 / 均值回归**：金融里被验证最久的两个异象——近期强者倾向继续强（动量），
   短期超卖倾向反弹（回归）。趋势策略吃前者，抄底策略吃后者，两者是镜像对手。
 - **接飞刀**：均值回归策略在单边下跌里的死法——每一次"看起来够便宜"都只是半山腰。
+- **IC / ICIR**：因子分与未来收益的截面秩相关（Information Coefficient）。
+  因子研究的守门员：|IC|>0.03 且 ICIR>0.3 才值得做组合回测（S5 实测三因子全灭）。
+- **幸存者偏差**：用"今天的指数名单"回测历史 = 拿未来的赢家炒股。本项目实测：
+  当前沪深300等权组合 2019 年起 +253% vs 指数 +43%——差额全是偏差，不是 alpha。
+- **波动率目标（vol targeting）**：仓位 = 目标波动 ÷ 已实现波动。利用波动率聚集
+  （大波动后往往还有大波动）自动减仓，S4 实测回撤 -39.7%→-24.9%、夏普 +0.1。
+- **Walk-Forward**：滚动"用过去N年选参→只交易下一年"，拼出的净值是整套流程的
+  真实样本外成绩。S1 双均线实测：每年重选参数 ≈ 不选（年化 -0.6%），被证伪弃用。
 
 ## 学习路线
 
@@ -92,7 +107,10 @@ main.py            命令行入口
 | 4a | 参数扫描 + 训练/测试分割（过拟合实操，结论：训练集选参≈抛硬币） | ✅ |
 | 4b | ETF 动量轮动（组合引擎；年化 10% vs 基准 5%） | ✅ |
 | 4c | 布林带均值回归（胜率 62-70% 但收益平庸，砍回撤一半） | ✅ |
-| 5 | 网格策略、波动率目标仓位、滚动样本外(walk-forward)、横截面因子选股 | ⬜ 下一步 |
+| 5a | 波动率目标仓位（S4：夏普 0.51→0.61，回撤 -39.7%→-24.9%） | ✅ |
+| 5b | Walk-Forward 滚动样本外（给双均线"验尸"：择时无超额，证伪弃用） | ✅ |
+| 5c | 横截面因子选股（IC 全不过门槛；A股月频动量为反向；幸存者偏差活体演示） | ✅ |
+| 6 | 网格策略、S4+S5 叠加组合、模拟盘对接、point-in-time 成分股 | ⬜ 下一步 |
 
 ## 数据来源
 
@@ -110,6 +128,10 @@ main.py            命令行入口
   而未运行，requests 读注册表代理会连不上。`datasource.py` 里已设 `NO_PROXY=*`。
 - **东财接口限流**：`index_zh_a_hist` 内部要分 17 页抓代码表，连发请求易被掐断；
   指数改走新浪源单请求接口。偶发连接重置靠递增重试扛过。
+- **批量下载 300 只成分股被限流**：akshare/东财逐只下载约 20 秒/只还会间歇掐连接；
+  改用 **baostock**（一次登录连续查询）+ 3 进程分段并行 → ~1.2 秒/只。
+  baostock 连接也可能中途失效（表现为整段快速失败），重跑该段即可（已成功的走缓存）。
+- **argparse help 里的 `%` 要写成 `%%`**，否则构造 parser 直接抛 badly formed help string。
 
 - **Python 3.14 太新**：已实测 numpy 2.5 / pandas 3.0 / akshare 1.18 / pyarrow 25 全部可用。
   若未来新装依赖失败，备选方案：装 Python 3.12 重建 `.venv`。

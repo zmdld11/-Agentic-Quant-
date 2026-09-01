@@ -60,6 +60,25 @@ def cmd_s3(args: argparse.Namespace) -> None:
         s3_mean_revert.run(symbol, n=args.n, k=args.k, refresh=args.refresh)
 
 
+def cmd_s4(args: argparse.Namespace) -> None:
+    from strategies import s4_rotation_plus
+    s4_rotation_plus.run(lookback=args.lookback, vol_window=args.vol_window,
+                         target_vol=args.vol, refresh=args.refresh)
+
+
+def cmd_wf(args: argparse.Namespace) -> None:
+    from quant import walkforward
+    walkforward.run_walkforward(args.symbol, args.refresh)
+
+
+def cmd_factors(args: argparse.Namespace) -> None:
+    if args.download:
+        from quant.datasource import download_stock_universe
+        download_stock_universe(refresh=args.refresh)
+    from strategies import s5_factor
+    s5_factor.run(topn=args.topn, cost=args.cost, refresh=args.refresh)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="A股量化回测 · 学习项目")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -104,6 +123,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_s3.add_argument("--k", type=float, default=2.0, help="入场z阈值，默认2.0")
     p_s3.add_argument("--refresh", action="store_true")
     p_s3.set_defaults(func=cmd_s3)
+
+    p_s4 = sub.add_parser("s4", help="策略4：动量轮动+波动率目标仓位")
+    p_s4.add_argument("--lookback", type=int, default=21)
+    p_s4.add_argument("--vol-window", type=int, default=60, help="已实现波动率窗口，默认60")
+    p_s4.add_argument("--vol", type=float, default=0.15, help="目标年化波动率，默认0.15")
+    p_s4.add_argument("--refresh", action="store_true")
+    p_s4.set_defaults(func=cmd_s4)
+
+    p_wf = sub.add_parser("wf", help="实验：Walk-Forward 滚动样本外验证")
+    p_wf.add_argument("--symbol", default="510300")
+    p_wf.add_argument("--refresh", action="store_true")
+    p_wf.set_defaults(func=cmd_wf)
+
+    p_fac = sub.add_parser("factors", help="策略5：横截面多因子选股（IC/分组/TopN组合）")
+    p_fac.add_argument("--download", action="store_true", help="先批量下载成分股数据(baostock)")
+    p_fac.add_argument("--topn", type=int, default=30)
+    p_fac.add_argument("--cost", type=float, default=0.0015, help="单边成本，默认0.15%%")
+    p_fac.add_argument("--refresh", action="store_true")
+    p_fac.set_defaults(func=cmd_factors)
     return parser
 
 

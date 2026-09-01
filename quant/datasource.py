@@ -80,6 +80,7 @@ def download_bars(
     start: str = DEFAULT_START,
     end: str | None = None,
     refresh: bool = False,
+    retries: int = 5,
 ) -> pd.DataFrame:
     """下载（或读缓存）日线行情，返回按日期索引的 DataFrame。
 
@@ -100,10 +101,12 @@ def download_bars(
         end_s = pd.Timestamp(end or pd.Timestamp.now()).strftime("%Y%m%d")
         if kind == "stock":
             raw = _retry(lambda: ak.stock_zh_a_hist(
-                symbol=symbol, period="daily", start_date=start_s, end_date=end_s, adjust="hfq"))
+                symbol=symbol, period="daily", start_date=start_s, end_date=end_s, adjust="hfq"),
+                times=retries)
         elif kind == "etf":
             raw = _retry(lambda: ak.fund_etf_hist_em(
-                symbol=symbol, period="daily", start_date=start_s, end_date=end_s, adjust="hfq"))
+                symbol=symbol, period="daily", start_date=start_s, end_date=end_s, adjust="hfq"),
+                times=retries)
         elif kind == "index":
             # 指数走新浪源：东财 index_zh_a_hist 内部要分17页抓全市场代码表，
             # 连发请求极易被限流掐断；新浪源单请求拿全量历史，稳定得多。
@@ -121,3 +124,87 @@ def download_universe(refresh: bool = False) -> None:
     for symbol, meta in UNIVERSE.items():
         df = download_bars(symbol, meta["kind"], refresh=refresh)
         print(f"  {symbol} {meta['name']:<8} {len(df):>5} 根日线  {df.index[0].date()} ~ {df.index[-1].date()}")
+
+
+# ---------------------------------------------------------------------------
+# 横截面研究：指数成分股批量下载
+# ---------------------------------------------------------------------------
+
+STOCKS_DIR = DATA_DIR / "stocks"
+
+
+def get_index_constituents(index_code: str = "000300", refresh: bool = False) -> pd.DataFrame:
+    """指数成分股列表 [code, name]。
+
+    重要局限：免费数据只能拿到【当前】成分股。用今天的名单回测历史存在
+    幸存者偏差（能进沪深300的是过去的赢家，中途退市/被剔除的看不到），
+    系统性高估收益 —— 实验记录里必须声明这一点。
+    """
+    cache = DATA_DIR / f"cons_{index_code}.parquet"
+    if cache.exists() and not refresh:
+        return pd.read_parquet(cache)
+    raw = _retry(lambda: ak.index_stock_cons_csindex(symbol=index_code))
+    df = raw.rename(columns={"成分券代码": "code", "成分券名称": "name"})[["code", "name"]].copy()
+    df.to_parquet(cache)
+    return df
+
+
+def download_stock_universe(
+    index_code: str = "000300",
+    start: str = "2016-06-01",
+    refresh: bool = False,
+    verbose_every: int = 50,
+    part: tuple[int, int] | None = None,
+) -> tuple[int, list[str]]:
+    """批量下载成分股后复权日线，缓存到 data/raw/stock_{code}.parquet。
+
+    走 baostock 而不是 akshare：批量300只时东财接口会被限流间歇掐连接，
+    baostock 一次登录后连续查询，快且稳。两家的后复权基准(anchor)不同，
+    但我们只做基于"收益率"的横截面比较，逐只自身可比即可，互不影响。
+
+    part: (起始行, 结束行) 切片——多进程并行下载时各管一段，互不重叠。
+    """
+    cons = get_index_constituents(index_code, refresh=refresh)
+    if part is not None:
+        cons = cons.iloc[part[0]:part[1]]
+    import baostock as bs  # 局部导入：只有批量下载需要它
+
+    lg = bs.login()
+    if lg.error_code != "0":
+        raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
+
+    ok, failed = 0, []
+    try:
+        for i, row in cons.iterrows():
+            code = row["code"]
+            cache = DATA_DIR / f"stock_{code}.parquet"
+            if cache.exists() and not refresh:
+                ok += 1
+                continue
+            # baostock 需要 交易所.代码 形式：6/5 开头是沪市，其余深市
+            bs_code = ("sh." if code.startswith(("6", "5")) else "sz.") + code
+            rs = bs.query_history_k_data_plus(
+                bs_code, "date,open,high,low,close,volume,amount",
+                start_date=start, end_date=pd.Timestamp.now().strftime("%Y-%m-%d"),
+                frequency="d", adjustflag="1")   # 1=后复权
+            rows = []
+            while rs.error_code == "0" and rs.next():
+                rows.append(rs.get_row_data())
+            if rows:
+                df = pd.DataFrame(rows, columns=rs.fields)
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.set_index("date").sort_index()
+                for col in ("open", "high", "low", "close", "volume", "amount"):
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+                df = df[df["volume"] > 0]        # 停牌日剔除
+                df.to_parquet(cache)
+                ok += 1
+            else:
+                failed.append(f"{code} {row['name']}")
+            if verbose_every and (i + 1) % verbose_every == 0:
+                print(f"  ... {i + 1}/{len(cons)}（失败 {len(failed)}）")
+    finally:
+        bs.logout()
+    print(f"成分股下载完成：成功 {ok}/{len(cons)}"
+          + (f"，失败: {failed[:10]}{'...' if len(failed) > 10 else ''}" if failed else ""))
+    return ok, failed

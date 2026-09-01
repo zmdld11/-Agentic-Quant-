@@ -26,16 +26,20 @@ def max_drawdown(equity: pd.Series) -> tuple[float, pd.Timestamp | None]:
     return float(dd.loc[worst_i]), worst_i
 
 
-def compute(equity: pd.Series, trades: pd.DataFrame | None = None) -> dict:
-    """算全套绩效指标。equity 是引擎输出的每日总资产序列。"""
+def compute(equity: pd.Series, trades: pd.DataFrame | None = None,
+            periods_per_year: int = TRADING_DAYS) -> dict:
+    """算全套绩效指标。equity 是引擎输出的每日总资产序列。
+
+    periods_per_year：日频 252；月频序列（如解析式因子回测）传 12。
+    """
     ret = equity.pct_change().dropna()
     n_days = len(equity)
-    years = n_days / TRADING_DAYS
+    years = n_days / periods_per_year
 
     total_return = equity.iloc[-1] / equity.iloc[0] - 1
     cagr = (equity.iloc[-1] / equity.iloc[0]) ** (1 / years) - 1 if years > 0 else np.nan
-    ann_vol = ret.std() * np.sqrt(TRADING_DAYS)
-    sharpe = ret.mean() / ret.std() * np.sqrt(TRADING_DAYS) if ret.std() > 0 else np.nan
+    ann_vol = ret.std() * np.sqrt(periods_per_year)
+    sharpe = ret.mean() / ret.std() * np.sqrt(periods_per_year) if ret.std() > 0 else np.nan
     mdd, mdd_date = max_drawdown(equity)
     calmar = cagr / abs(mdd) if mdd < 0 else np.nan
 
@@ -56,15 +60,28 @@ def compute(equity: pd.Series, trades: pd.DataFrame | None = None) -> dict:
         executed = trades[trades["action"].isin(["BUY", "SELL"])]
         stats["成交笔数"] = len(executed)
         stats["涨停/跌停/T+1挡单"] = int((trades["action"].str.startswith("SKIP")).sum())
-        rounds = trade_rounds(trades)
-        if rounds:
-            stats["完整交易回合"] = len(rounds)
-            stats["回合胜率"] = sum(r["win"] for r in rounds) / len(rounds)
-            pnls = [r["pnl"] for r in rounds]
-            stats["回合平均盈亏"] = float(np.mean(pnls))
-            holds = [r["hold_days"] for r in rounds]
-            stats["平均持仓天数"] = float(np.mean(holds))
+        # 回合统计只对"全进全出"型策略有意义：部分调仓（如波动率目标按比例加减仓）
+        # 会让一买一卖配对错位，统计失真 —— 检测到连续同向交易就跳过
+        if not _has_partial_adjustment(trades):
+            rounds = trade_rounds(trades)
+            if rounds:
+                stats["完整交易回合"] = len(rounds)
+                stats["回合胜率"] = sum(r["win"] for r in rounds) / len(rounds)
+                pnls = [r["pnl"] for r in rounds]
+                stats["回合平均盈亏"] = float(np.mean(pnls))
+                holds = [r["hold_days"] for r in rounds]
+                stats["平均持仓天数"] = float(np.mean(holds))
     return stats
+
+
+def _has_partial_adjustment(trades: pd.DataFrame) -> bool:
+    """同一标的连续两笔同向交易 = 存在部分调仓。"""
+    groups = trades.groupby("symbol") if "symbol" in trades.columns else [(None, trades)]
+    for _, sub in groups:
+        acts = sub["action"].tolist()
+        if any(a == b for a, b in zip(acts, acts[1:]) if a in ("BUY", "SELL")):
+            return True
+    return False
 
 
 def trade_rounds(trades: pd.DataFrame) -> list[dict]:

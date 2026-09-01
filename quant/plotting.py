@@ -70,6 +70,31 @@ def plot_backtest(
     plt.close(fig)
 
 
+def plot_lines(
+    series_dict: dict[str, pd.Series],
+    title: str = "",
+    ylabel: str = "净值（起点=1）",
+    save_path: str | Path | None = None,
+) -> None:
+    """多条净值线画在一张图（因子分组、多策略对比等）。"""
+    fig, ax = plt.subplots(figsize=(11, 6))
+    for name, s in series_dict.items():
+        if s is None or s.dropna().empty:
+            continue
+        nav = s / s.dropna().iloc[0]
+        ax.plot(nav.index, nav.values, label=name, lw=1.3)
+    ax.set_title(title, fontsize=12)
+    ax.set_ylabel(ylabel)
+    ax.legend(loc="upper left")
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    if save_path is not None:
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150)
+        print(f"图已保存: {save_path}")
+    plt.close(fig)
+
+
 def plot_heatmap(
     values: pd.DataFrame,
     title: str = "",
