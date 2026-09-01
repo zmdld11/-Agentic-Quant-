@@ -36,8 +36,12 @@ def generate_weights(
     lookback: int = 21,
     vol_window: int = 60,
     target_vol: float = 0.15,
+    topk: int = 1,
 ) -> pd.DataFrame:
-    """月末选动量最强者，按 目标波动/实际波动 缩放仓位（波动率目标）。"""
+    """月末选动量最强的 topk 只，各自仓位 = (1/topk) × min(1, 目标波动/实际波动)。
+
+    topk>1 即"分散版"：不只押最强者，前 k 名各分一份再各自按波动缩放。
+    """
     closes = pd.DataFrame({s: df["close"] for s, df in panel.items()})
     mom = closes / closes.shift(lookback) - 1
     # 年化已实现波动率：日收益标准差 × √252
@@ -51,20 +55,21 @@ def generate_weights(
             row = mom.loc[date].dropna()
             current = {}
             if len(row):
-                top = row.nlargest(1)
-                s = top.index[0]
-                if top.iloc[0] > 0:          # 绝对动量过滤：最强者也在跌就持币
+                top = row.nlargest(topk)
+                sel = [s for s in top.index if top[s] > 0]   # 绝对动量过滤：全负则持币
+                for s in sel:
                     v = vols.loc[date, s]
-                    current = {s: min(1.0, target_vol / v) if v and v > 0 else 0.0}
+                    w = min(1.0, target_vol / v) if v and v > 0 else 0.0
+                    current[s] = w / len(sel)
         for s, w in current.items():
             weights.loc[date, s] = w
     return weights
 
 
 def run(lookback: int = 21, vol_window: int = 60, target_vol: float = 0.15,
-        refresh: bool = False) -> dict:
+        topk: int = 1, refresh: bool = False) -> dict:
     panel = build_panel(refresh=refresh)
-    weights = generate_weights(panel, lookback, vol_window, target_vol)
+    weights = generate_weights(panel, lookback, vol_window, target_vol, topk)
 
     engine = PortfolioEngine(cost=CostModel(stamp_tax_rate=0.0))
     equity, trades = engine.run(panel, weights, limit_pct=0.10)
@@ -79,8 +84,8 @@ def run(lookback: int = 21, vol_window: int = 60, target_vol: float = 0.15,
     s2_stats = met.compute(s2_eq["equity"], s2_tr)
     bh_stats = met.compute(bh_equity["equity"])
 
-    title = f"S4 波动率目标轮动(动量{lookback}日, 目标波动{target_vol:.0%})"
-    out = RESULTS_DIR / "s4_vol_target"
+    title = f"S4 波动率目标轮动(动量{lookback}日, 目标波动{target_vol:.0%}, 持前{topk})"
+    out = RESULTS_DIR / f"s4_vol_target_top{topk}"
     out.mkdir(parents=True, exist_ok=True)
     equity.to_csv(out / "equity.csv", encoding="utf-8-sig")
     trades.to_csv(out / "trades.csv", index=False, encoding="utf-8-sig")

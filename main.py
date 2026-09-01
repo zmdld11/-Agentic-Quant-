@@ -63,7 +63,7 @@ def cmd_s3(args: argparse.Namespace) -> None:
 def cmd_s4(args: argparse.Namespace) -> None:
     from strategies import s4_rotation_plus
     s4_rotation_plus.run(lookback=args.lookback, vol_window=args.vol_window,
-                         target_vol=args.vol, refresh=args.refresh)
+                         target_vol=args.vol, topk=args.topk, refresh=args.refresh)
 
 
 def cmd_wf(args: argparse.Namespace) -> None:
@@ -77,6 +77,24 @@ def cmd_factors(args: argparse.Namespace) -> None:
         download_stock_universe(refresh=args.refresh)
     from strategies import s5_factor
     s5_factor.run(topn=args.topn, cost=args.cost, refresh=args.refresh)
+
+
+def cmd_s6(args: argparse.Namespace) -> None:
+    from strategies import s6_grid
+    for i, symbol in enumerate(args.symbols):
+        if i:
+            print("\n")
+        s6_grid.run(symbol, n_grids=args.grids, refresh=args.refresh)
+
+
+def cmd_signal(args: argparse.Namespace) -> None:
+    from quant.live import s4_signal
+    s4_signal(refresh=args.refresh)
+
+
+def cmd_summary(args: argparse.Namespace) -> None:
+    from quant import summary
+    summary.run()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -128,6 +146,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_s4.add_argument("--lookback", type=int, default=21)
     p_s4.add_argument("--vol-window", type=int, default=60, help="已实现波动率窗口，默认60")
     p_s4.add_argument("--vol", type=float, default=0.15, help="目标年化波动率，默认0.15")
+    p_s4.add_argument("--topk", type=int, default=1, help="同时持有最强的几只，默认1")
     p_s4.add_argument("--refresh", action="store_true")
     p_s4.set_defaults(func=cmd_s4)
 
@@ -142,6 +161,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_fac.add_argument("--cost", type=float, default=0.0015, help="单边成本，默认0.15%%")
     p_fac.add_argument("--refresh", action="store_true")
     p_fac.set_defaults(func=cmd_factors)
+
+    p_s6 = sub.add_parser("s6", help="策略6：网格交易（波动收割机）")
+    p_s6.add_argument("--symbols", nargs="+", default=["512880", "510500"],
+                      help="默认 512880(证券ETF) 510500(中证500ETF)")
+    p_s6.add_argument("--grids", type=int, default=20, help="格数，默认20")
+    p_s6.add_argument("--refresh", action="store_true")
+    p_s6.set_defaults(func=cmd_s6)
+
+    p_sig = sub.add_parser("signal", help="模拟盘信号器：S4 当前持仓建议（收盘后 --refresh）")
+    p_sig.add_argument("--refresh", action="store_true", help="先刷新ETF数据")
+    p_sig.set_defaults(func=cmd_signal)
+
+    p_sum = sub.add_parser("summary", help="全策略同窗总览（图+表）")
+    p_sum.set_defaults(func=cmd_summary)
     return parser
 
 

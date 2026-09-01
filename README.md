@@ -27,11 +27,14 @@
 .venv/Scripts/python.exe main.py s2        # 3. 策略2：ETF动量轮动（vs 沪深300 持有）
 .venv/Scripts/python.exe main.py s3        # 4. 策略3：均值回归（券商ETF + 300ETF）
 .venv/Scripts/python.exe main.py s4        # 5. 策略4：轮动+波动率目标仓位（风险预算）
-.venv/Scripts/python.exe main.py scan      # 6. 实验：参数扫描热图（看参数面形状）
-.venv/Scripts/python.exe main.py overfit   # 7. 实验：训练/测试分割过拟合检验（必看）
-.venv/Scripts/python.exe main.py showcase  # 8. "训练最优参数"在测试集的净值 vs 默认参数
-.venv/Scripts/python.exe main.py wf        # 9. 实验：Walk-Forward 滚动样本外验证
-.venv/Scripts/python.exe main.py factors --download  # 10. 策略5：横截面因子选股（首次需下载成分股数据）
+.venv/Scripts/python.exe main.py s6        # 6. 策略6：网格交易（震荡市收割机）
+.venv/Scripts/python.exe main.py scan      # 7. 实验：参数扫描热图（看参数面形状）
+.venv/Scripts/python.exe main.py overfit   # 8. 实验：训练/测试分割过拟合检验（必看）
+.venv/Scripts/python.exe main.py showcase  # 9. "训练最优参数"在测试集的净值 vs 默认参数
+.venv/Scripts/python.exe main.py wf        # 10. 实验：Walk-Forward 滚动样本外验证
+.venv/Scripts/python.exe main.py factors --download  # 11. 策略5：横截面因子选股（首次需下载成分股数据）
+.venv/Scripts/python.exe main.py signal    # 12. 模拟盘信号器：S4 当前持仓建议（收盘后加 --refresh）
+.venv/Scripts/python.exe main.py summary   # 13. 全策略同窗总览（图+表）
 # 结果都在 results/ 下：图 + 交易流水 + 报告；实验结论在 research/
 ```
 
@@ -50,12 +53,15 @@ quant/             核心包，建议按此顺序读：
   scan.py           参数扫描 + 训练/测试分割过拟合实验
   walkforward.py    滚动样本外验证（walk-forward）
   factors.py        横截面因子研究：IC 检验、分组回测、TopN 组合
+  live.py           模拟盘信号器：S4 规则输出当前持仓建议并记日志
+  summary.py        全策略同窗总览（对比图+表）
 strategies/        每个策略一个文件：
   s1_ma_cross.py    双均线（趋势入门；已被 walk-forward 证伪，留作教材）
   s2_momentum.py    ETF 动量轮动（跨资产配置）
   s3_mean_revert.py 布林带均值回归（超卖反弹）
-  s4_rotation_plus.py 轮动+波动率目标仓位（风险预算）
+  s4_rotation_plus.py 轮动+波动率目标仓位（风险预算；全项目冠军）
   s5_factor.py      横截面多因子选股（IC/分组/TopN）
+  s6_grid.py        网格交易（波动收割机，含专用模拟器）
 strategies/        每个策略一个文件：s1_ma_cross（双均线）...
 research/          实验记录：每个策略每次实验的结论（像做题笔记）
 results/           回测输出（图/csv/报告），git 忽略
@@ -107,10 +113,13 @@ main.py            命令行入口
 | 4a | 参数扫描 + 训练/测试分割（过拟合实操，结论：训练集选参≈抛硬币） | ✅ |
 | 4b | ETF 动量轮动（组合引擎；年化 10% vs 基准 5%） | ✅ |
 | 4c | 布林带均值回归（胜率 62-70% 但收益平庸，砍回撤一半） | ✅ |
-| 5a | 波动率目标仓位（S4：夏普 0.51→0.61，回撤 -39.7%→-24.9%） | ✅ |
+| 5a | 波动率目标仓位（S4：夏普 0.51→0.63，回撤 -39.7%→-24.9%） | ✅ |
 | 5b | Walk-Forward 滚动样本外（给双均线"验尸"：择时无超额，证伪弃用） | ✅ |
 | 5c | 横截面因子选股（IC 全不过门槛；A股月频动量为反向；幸存者偏差活体演示） | ✅ |
-| 6 | 网格策略、S4+S5 叠加组合、模拟盘对接、point-in-time 成分股 | ⬜ 下一步 |
+| 6a | 网格策略（中证500 年化 8.1% 碾压持有 2.8%；券商标的经历两种经典死法） | ✅ |
+| 6b | S4 top1→top2 分散实验（分散无优势：池内资产高相关） | ✅ |
+| 6c | 模拟盘信号器（`signal` 命令，2026-09-01 开档：黄金ETF 62%） | ✅ |
+| 7 | 模拟盘跟踪对账、point-in-time 成分股、S4 池子扩展 | ⬜ 长期 |
 
 ## 数据来源
 
