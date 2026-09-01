@@ -12,6 +12,7 @@ import matplotlib
 
 matplotlib.use("Agg")  # 无界面环境也能保存图片
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 # Windows 自带中文字体，解决 matplotlib 中文乱码
@@ -62,6 +63,77 @@ def plot_backtest(
     ax2.grid(alpha=0.3)
     fig.tight_layout()
 
+    if save_path is not None:
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150)
+        print(f"图已保存: {save_path}")
+    plt.close(fig)
+
+
+def plot_heatmap(
+    values: pd.DataFrame,
+    title: str = "",
+    fmt: str = "{:.2f}",
+    save_path: str | Path | None = None,
+) -> None:
+    """参数扫描热图：values 的行/列是两个参数，单元格是指标值。
+
+    用红-黄-绿色阶（红=差，绿=好），负值用 TwoSlopeNorm 以 0 为中心。
+    """
+    from matplotlib.colors import TwoSlopeNorm
+
+    arr = values.values.astype(float)
+    vmin, vmax = np.nanmin(arr), np.nanmax(arr)
+    norm = TwoSlopeNorm(vmin=min(vmin, 0), vcenter=0, vmax=max(vmax, 0)) if vmin < 0 < vmax else None
+
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    im = ax.imshow(arr, cmap="RdYlGn", aspect="auto", norm=norm)
+    ax.set_xticks(range(len(values.columns)), [str(c) for c in values.columns])
+    ax.set_yticks(range(len(values.index)), [str(i) for i in values.index])
+    ax.set_xlabel("长期均线天数")
+    ax.set_ylabel("短期均线天数")
+    for i in range(arr.shape[0]):
+        for j in range(arr.shape[1]):
+            v = arr[i, j]
+            if not pd.isna(v):
+                ax.text(j, i, fmt.format(v), ha="center", va="center", fontsize=9)
+    ax.set_title(title, fontsize=12)
+    fig.colorbar(im, ax=ax, shrink=0.9)
+    fig.tight_layout()
+    if save_path is not None:
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150)
+        print(f"图已保存: {save_path}")
+    plt.close(fig)
+
+
+def plot_scatter(
+    x: pd.Series,
+    y: pd.Series,
+    xlabel: str = "",
+    ylabel: str = "",
+    title: str = "",
+    highlight: tuple[str, float, float] | None = None,
+    save_path: str | Path | None = None,
+) -> None:
+    """散点图（如训练集指标 vs 测试集指标）。
+
+    highlight: (标签, x, y) —— 额外放大标注一个关键点。
+    """
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.scatter(x, y, s=60, alpha=0.75, color="tab:blue", edgecolor="white")
+    ax.axhline(0, color="gray", lw=0.8, alpha=0.6)
+    ax.axvline(0, color="gray", lw=0.8, alpha=0.6)
+    if highlight is not None:
+        label, hx, hy = highlight
+        ax.scatter([hx], [hy], s=200, marker="*", color="tab:red", zorder=5)
+        ax.annotate(label, (hx, hy), xytext=(8, 8), textcoords="offset points",
+                    fontsize=11, color="tab:red")
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title, fontsize=12)
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
     if save_path is not None:
         Path(save_path).parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_path, dpi=150)

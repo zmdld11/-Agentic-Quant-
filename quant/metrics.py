@@ -68,7 +68,19 @@ def compute(equity: pd.Series, trades: pd.DataFrame | None = None) -> dict:
 
 
 def trade_rounds(trades: pd.DataFrame) -> list[dict]:
-    """把一买一卖配成一个回合，统计每回合盈亏（衡量"这套规则下单次出手赚不赚"）。"""
+    """把一买一卖配成一个回合，统计每回合盈亏（衡量"这套规则下单次出手赚不赚"）。
+
+    多标的组合的流水带 symbol 列时，按标的分别配对（A的买不能配B的卖）。
+    """
+    if "symbol" in trades.columns:
+        rounds = []
+        for _, sub in trades.groupby("symbol"):
+            rounds.extend(_rounds_single(sub))
+        return rounds
+    return _rounds_single(trades)
+
+
+def _rounds_single(trades: pd.DataFrame) -> list[dict]:
     rounds = []
     open_buy: dict | None = None
     for _, t in trades.iterrows():
