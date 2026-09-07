@@ -719,6 +719,25 @@ function pct(x, digits) {
 function loadCockpit() {
     loadCockpitPaper();
     loadCockpitSentiment();
+    loadCockpitScheduler();
+}
+
+function loadCockpitScheduler() {
+    fetch('/api/scheduler').then(function (r) { return r.json(); }).then(function (d) {
+        var el = document.getElementById('schedulerStatus');
+        if (!d.enabled) {
+            el.textContent = '⚙️ 内置定时器未启用（DISABLE_SCHEDULER=1）';
+            return;
+        }
+        var parts = d.jobs.map(function (j) {
+            var s = j.name + ' 下次 ' + (j.next_run || '--');
+            if (j.last) s += '（上次 ' + (j.last.ok ? '✔' : '✘') + ' ' + j.last.at + ', ' + j.last.seconds + 's）';
+            return s;
+        });
+        el.textContent = '⚙️ 内置定时器 · ' + d.timezone + ' · ' + parts.join(' ｜ ');
+    }).catch(function () {
+        document.getElementById('schedulerStatus').textContent = '⚙️ 定时任务状态不可用';
+    });
 }
 
 function loadCockpitPaper() {

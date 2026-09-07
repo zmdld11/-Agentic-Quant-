@@ -1,4 +1,4 @@
-akshare>=1.18
+akshare>=1.18.81
 baostock>=0.9
 beautifulsoup4>=4.12
 fastapi>=0.110
@@ -11,3 +11,4 @@ pyarrow>=17.0
 python-dotenv>=1.0
 requests>=2.31
 uvicorn>=0.30
+apscheduler>=3.10

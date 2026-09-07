@@ -361,3 +361,5 @@ body {
 .score-pos { color: #e0562f; font-weight: 600; margin-right: 4px; }
 .score-neg { color: #1a7f37; font-weight: 600; margin-right: 4px; }
 .cockpit-note { margin-top: 18px; font-size: 12px; opacity: .6; }
+.cockpit-sched { margin-top: 14px; font-size: 12.5px; padding: 9px 12px; border-radius: 8px;
+                 background: var(--card, rgba(0,0,0,.03)); opacity: .85; }

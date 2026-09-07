@@ -115,7 +115,10 @@ def run(refresh: bool = False) -> dict:
     _save_state(state)
 
     # ---- 对账单 ----
-    bh0 = closes.at[pd.Timestamp(state["inception"]), "510300"]
+    # as-of 查基准起点：数据源兜底/延迟时开档日可能没有精确对齐的交易日
+    inc = pd.Timestamp(state["inception"])
+    earlier = closes.index[closes.index <= inc]
+    bh0 = closes.at[earlier[-1] if len(earlier) else closes.index[0], "510300"]
     bh = closes.at[mark_day, "510300"] / bh0
     pos = state["position"]
     pos_desc = (f"{UNIVERSE[pos['symbol']]['name']}({pos['symbol']}) "

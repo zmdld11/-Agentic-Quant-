@@ -19,6 +19,19 @@ from pathlib import Path
 # 只影响当前 Python 进程，不修改系统设置。
 os.environ.setdefault("NO_PROXY", "*")
 
+# akshare 的请求层不传 timeout（实测：财联社接口异常时裸连接挂死 +
+# 指数退避重试10次 ≈ 17分钟"假死"，2026-09-07 踩坑）。给全进程所有
+# requests.get 补默认 30s 超时；已显式传 timeout 的调用不受影响。
+import requests as _requests  # noqa: E402
+
+_orig_requests_get = _requests.get
+
+def _requests_get_with_default_timeout(*args, **kwargs):  # noqa: E301
+    kwargs.setdefault("timeout", 30)
+    return _orig_requests_get(*args, **kwargs)
+
+_requests.get = _requests_get_with_default_timeout
+
 import akshare as ak
 import pandas as pd
 
@@ -74,6 +87,78 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
     return df.astype("float64")
 
 
+def _bs_fetch_daily(symbol: str, start: str, end: str) -> pd.DataFrame:
+    """baostock 后复权日线（股票与 ETF 通用），东财限流时的兜底源。
+
+    注意：baostock 的后复权基准(anchor)与东财不同。直接混用会让同一条
+    价格序列出现台阶 → 调用方须做锚点对齐（见 _align_anchor）。
+    """
+    import baostock as bs  # noqa: PLC0415
+
+    prefix = "sh." if symbol.startswith(("5", "6", "9")) else "sz."
+    lg = bs.login()
+    if lg.error_code != "0":
+        raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
+    try:
+        rs = bs.query_history_k_data_plus(
+            prefix + symbol, "date,open,high,low,close,volume,amount",
+            start_date=start, end_date=end, frequency="d", adjustflag="1")
+        rows = []
+        while rs.error_code == "0" and rs.next():
+            rows.append(rs.get_row_data())
+    finally:
+        bs.logout()
+    df = pd.DataFrame(rows, columns=["date", "open", "high", "low", "close",
+                                     "volume", "amount"])
+    if df.empty:
+        raise RuntimeError(f"baostock 无数据: {symbol}")
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.set_index("date").sort_index().astype("float64")
+    return df[df["volume"] > 0]
+
+
+def _align_anchor(new_df: pd.DataFrame, cache: Path) -> pd.DataFrame:
+    """把兜底源的新数据缩放到与缓存一致的复权锚点（防换源造成价格台阶）。
+
+    做法：取两边最近 60 个共同交易日的收盘比值作为缩放系数。
+    无缓存或重叠不足时不处理（全新标的，锚点无所谓）。
+    """
+    if not cache.exists():
+        return new_df
+    try:
+        old = pd.read_parquet(cache)
+        joined = pd.concat([old["close"].rename("old"), new_df["close"].rename("new")],
+                           axis=1, join="inner").dropna()
+        if len(joined) >= 20:
+            factor = float(joined["old"].iloc[-1] / joined["new"].iloc[-1])
+            if 0.1 < factor < 10:   # 合理区间外的比值视为异常，放弃对齐
+                return new_df * factor
+    except Exception:  # noqa: BLE001 - 对齐失败就原样返回，宁可不修不能改错
+        pass
+    return new_df
+
+
+def _merge_with_cache(new_df: pd.DataFrame, cache: Path) -> pd.DataFrame:
+    """兜底源与缓存合并而非替换：保留全部历史，只用新数据补尾部。
+
+    背景坑（2026-09-07 实测）：baostock 的 ETF 数据只有 2026 年以后
+    （股票却是全历史）——直接替换会把 2015-2026 的回测历史冲掉。
+    新旧衔接处用对齐过的锚点，接缝两侧价格一致。
+    """
+    if not cache.exists():
+        return new_df
+    old = pd.read_parquet(cache)
+    common = new_df.index.intersection(old.index)
+    if len(common):
+        # 重叠期以新数据为准（最近几日可能有数据修订），更早的沿用缓存
+        cut = common[0]
+        return pd.concat([old.loc[:cut], new_df.loc[cut:]])
+    # 无重叠（baostock 只给近期而缓存停更更早？）→ 拼接并告警
+    print(f"  [warn] 兜底数据与缓存无重叠：{cache.stem} 缓存止于 {old.index[-1].date()}，"
+          f"新数据始于 {new_df.index[0].date()}，中间可能有缺口")
+    return pd.concat([old, new_df[new_df.index > old.index[-1]]])
+
+
 def download_bars(
     symbol: str,
     kind: str,
@@ -91,6 +176,9 @@ def download_bars(
     2. 东财的前复权(qfq)在长历史+高分红个股上会算出负价格
        （茅台 2015 年 qfq 收盘价是 -117 元），直接毁掉回测。
     hfq 唯一的副作用是价格数值偏大，所以回测初始资金设为 100 万配合一手门槛。
+
+    兜底链：个股/ETF 主走东财(akshare)，被限流掐连接时自动切 baostock，
+    并做锚点对齐保证与历史缓存无缝衔接——无人值守定时任务的可靠性靠这层。
     """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     cache = DATA_DIR / f"{kind}_{symbol}.parquet"
@@ -99,21 +187,32 @@ def download_bars(
     else:
         start_s = pd.Timestamp(start).strftime("%Y%m%d")
         end_s = pd.Timestamp(end or pd.Timestamp.now()).strftime("%Y%m%d")
-        if kind == "stock":
-            raw = _retry(lambda: ak.stock_zh_a_hist(
-                symbol=symbol, period="daily", start_date=start_s, end_date=end_s, adjust="hfq"),
-                times=retries)
-        elif kind == "etf":
-            raw = _retry(lambda: ak.fund_etf_hist_em(
-                symbol=symbol, period="daily", start_date=start_s, end_date=end_s, adjust="hfq"),
-                times=retries)
-        elif kind == "index":
-            # 指数走新浪源：东财 index_zh_a_hist 内部要分17页抓全市场代码表，
-            # 连发请求极易被限流掐断；新浪源单请求拿全量历史，稳定得多。
-            raw = _retry(lambda: ak.stock_zh_index_daily(symbol=_INDEX_SRC[symbol]))
-        else:
-            raise ValueError(f"未知 kind: {kind}（可选 stock/etf/index）")
-        df = _clean(raw)
+        try:
+            if kind == "stock":
+                raw = _retry(lambda: ak.stock_zh_a_hist(
+                    symbol=symbol, period="daily", start_date=start_s, end_date=end_s, adjust="hfq"),
+                    times=retries)
+                df = _clean(raw)
+            elif kind == "etf":
+                raw = _retry(lambda: ak.fund_etf_hist_em(
+                    symbol=symbol, period="daily", start_date=start_s, end_date=end_s, adjust="hfq"),
+                    times=retries)
+                df = _clean(raw)
+            elif kind == "index":
+                # 指数走新浪源：东财 index_zh_a_hist 内部要分17页抓全市场代码表，
+                # 连发请求极易被限流掐断；新浪源单请求拿全量历史，稳定得多。
+                raw = _retry(lambda: ak.stock_zh_index_daily(symbol=_INDEX_SRC[symbol]))
+                df = _clean(raw)
+            else:
+                raise ValueError(f"未知 kind: {kind}（可选 stock/etf/index）")
+        except Exception as e:  # noqa: BLE001 - 东财失败 → baostock 兜底（只补尾部增量）
+            if kind not in ("stock", "etf"):
+                raise
+            print(f"  [fallback] {symbol} 东财失败({type(e).__name__})，改用 baostock")
+            df = _retry(lambda: _bs_fetch_daily(
+                symbol, start, (end or str(pd.Timestamp.now().date()))), times=2)
+            df = _align_anchor(df, cache)
+            df = _merge_with_cache(df, cache)
         df.to_parquet(cache)
     # 缓存里是全量数据，按请求区间切片后返回
     return df.loc[start: end or df.index[-1]]

@@ -36,11 +36,23 @@ PANEL_FILE = DATA_DIR.parent / "processed" / "sentiment_panel.parquet"
 
 
 def fetch_telegraph() -> pd.DataFrame:
-    """拉取财联社电报最新一批，增量缓存（按标题+时间去重）。"""
+    """拉取财联社电报最新一批，增量缓存（按标题+时间去重）。
+
+    看门狗：上游请求层即使有默认超时，重试退避累计仍可能拖很久——
+    这里用线程池限时 90s 兜底，超时抛错走 _retry 重试，绝不无限等待。
+    """
     import akshare as ak  # noqa: PLC0415
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as FutureTimeout
 
     old = pd.read_parquet(NEWS_CACHE) if NEWS_CACHE.exists() else pd.DataFrame()
-    raw = _retry(lambda: ak.stock_info_global_cls(symbol="全部"), times=3)
+
+    def _pull():
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(lambda: ak.stock_info_global_cls(symbol="全部"))
+            return future.result(timeout=90)
+
+    raw = _retry(_pull, times=3)
     new = raw.rename(columns={"标题": "title", "内容": "content",
                               "发布日期": "date", "发布时间": "time"})[
         ["title", "content", "date", "time"]].copy()

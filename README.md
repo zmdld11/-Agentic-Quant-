@@ -116,7 +116,14 @@ markdown/ docs/ 原看板项目的部署与开发文档（未跟踪）
 升级：`git pull && pip install -r requirements.txt && sudo systemctl restart quant`
 （新增 matplotlib/pyarrow 约 200MB 磁盘，内存影响极小）。
 
-**每日任务（crontab 新增）**：
+**每日自动任务（已内置，无需配置）**：主进程启动时自动开启定时器——
+周一至五 18:10 采集电报+情绪打分、18:30 模拟盘补账结算（Asia/Shanghai），
+每次任务以独立子进程执行，日志在 `logs/scheduler.log`，驾驶舱页面可看运行状态。
+**服务器 git pull 后下一次任务自动用新代码（子进程设计，Web 无需重启）**。
+
+可用 `.env` 覆盖计划/开关：`NEWS_TIME=18:10`、`PAPER_TIME=18:30`、`DISABLE_SCHEDULER=1`。
+
+crontab 方式（备选，适合不想常驻 Web 服务的场景）：
 
 ```cron
 30 17 * * 1-5  cd /path/to/repo && .venv/bin/python main.py news --collect >> logs/news.log 2>&1
@@ -138,11 +145,18 @@ markdown/ docs/ 原看板项目的部署与开发文档（未跟踪）
 
 ## 踩坑记录（持续追加，全量见 research/）
 
+- **akshare 请求层无 timeout**（2026-09-07 实锤）：财联社接口异常时裸连接挂死 +
+  指数退避重试10次 ≈ 17 分钟"假死"。已在 datasource 给全进程 requests.get 补默认
+  30s 超时 + news 拉取加 90s 线程看门狗
+- **baostock 的 ETF 只有 2026 年以后的数据**（股票却是全历史）→ ETF 兜底必须
+  "合并缓存补尾部"而非替换，否则会把回测长历史冲掉（实测踩过又恢复）
+- 东财 ETF 接口限流时自动切 baostock 兜底（锚点对齐防价格台阶）——无人值守的关键
 - 东财个股新闻接口服务端变更（2026-09 只返回用户区）→ 情绪管线走财联社电报
 - akshare 老正则 × pandas3/pyarrow 崩溃（`\u3000` RE2 不识别）；argparse help 里 `%` 写 `%%`
 - 批量 300 只成分股：东财限流 → baostock 三进程并行（~1.2s/只）
 - Windows 注册表代理未运行 → 代码层 NO_PROXY=*
 - 回测必须后复权：东财 qfq 长历史高分红个股产生负价（茅台 2015=-117 元）
+- akshare 版本要对齐 ≥1.18.81（1.18.48 的财联社实现裸请求无签名，必挂）
 
 ## 免责声明
 

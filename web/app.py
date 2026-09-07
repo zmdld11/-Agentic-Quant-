@@ -20,6 +20,21 @@ api_key = os.getenv("DEEPSEEK_API_KEY")
 quant_engine = AgenticQuant(api_key=api_key) if api_key else None
 
 
+@app.on_event("startup")
+async def start_background_jobs():
+    """启动主进程内置定时器（周一至五自动跑 news/paper，见 quant/scheduler.py）。"""
+    from quant.config import load_env
+    load_env()
+    from quant import scheduler
+    scheduler.start_scheduler()
+
+
+@app.get("/api/scheduler")
+async def scheduler_status():
+    from quant import scheduler
+    return scheduler.status()
+
+
 class AnalyzeRequest(BaseModel):
     symbol: str
 
