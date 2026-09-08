@@ -130,11 +130,43 @@ async def get_news(date: str = None):
     return result
 
 
-# ── 驾驶舱：量化管线的数据产物（模拟盘账户 + LLM情绪面板）──────────────
+# ── 驾驶舱：量化管线的数据产物（模拟盘账户 + AI基金 + LLM情绪面板）──────
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PAPER_STATE = os.path.join(ROOT, "data", "processed", "paper_account.json")
+FUND_STATE = os.path.join(ROOT, "data", "processed", "fund_alpha.json")
 SENTIMENT_PANEL = os.path.join(ROOT, "data", "processed", "sentiment_panel.parquet")
 TELEGRAPH = os.path.join(ROOT, "data", "raw", "news", "cls_telegraph.parquet")
+
+
+@app.get("/api/fund")
+async def get_fund():
+    """AI 一号基金（50万双引擎）对账数据。"""
+    import json as _json
+    if not os.path.exists(FUND_STATE):
+        return {"available": False, "message": "基金未成立：先运行 python main.py fund"}
+    with open(FUND_STATE, encoding="utf-8") as f:
+        state = _json.load(f)
+    initial = 500_000.0
+    nav = state["nav_history"][-1]["nav"] if state.get("nav_history") else initial
+    last = state["nav_history"][-1] if state.get("nav_history") else {}
+    g = state.get("grid", {})
+    pos = state.get("rotation", {}).get("position")
+    return {
+        "available": True,
+        "inception": state.get("inception"),
+        "nav": nav,
+        "total_return": nav / initial - 1,
+        "initial": initial,
+        "rotation": {"value": last.get("rotation"),
+                     "position": (pos["symbol"] if pos else None),
+                     "weight": (pos["weight"] if pos else 0)},
+        "grid": {"value": last.get("grid"), "shares": g.get("shares", 0),
+                 "range": f"{g.get('p_low', 0):.2f}~{g.get('p_high', 0):.2f}",
+                 "trades": g.get("trades", 0)},
+        "guard_active": state.get("guard_active", False),
+        "trades": list(reversed(state.get("trades", [])))[:10],
+        "nav_history": state.get("nav_history", []),
+    }
 
 
 @app.get("/api/paper")

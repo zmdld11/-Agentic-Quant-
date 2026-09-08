@@ -59,6 +59,11 @@ def cmd_data(args: argparse.Namespace) -> None:
     download_universe(refresh=args.refresh)
 
 
+def cmd_fund(args: argparse.Namespace) -> None:
+    from quant import fund
+    fund.run(refresh=args.refresh)
+
+
 def cmd_s1(args: argparse.Namespace) -> None:
     for i, symbol in enumerate(args.symbols):
         if i:
@@ -233,6 +238,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_paper = sub.add_parser("paper", help="模拟盘账户：自动补账+结算+对账单（幂等可日跑）")
     p_paper.add_argument("--refresh", action="store_true", help="先刷新ETF数据（收盘后用）")
     p_paper.set_defaults(func=cmd_paper)
+
+    p_fund = sub.add_parser("fund", help="AI一号基金(50万)：双引擎自动交易+对账单（定时器18:40自动跑）")
+    p_fund.add_argument("--refresh", action="store_true", help="先刷新ETF数据（收盘后用）")
+    p_fund.set_defaults(func=cmd_fund)
 
     p_sum = sub.add_parser("summary", help="全策略同窗总览（图+表）")
     p_sum.set_defaults(func=cmd_summary)

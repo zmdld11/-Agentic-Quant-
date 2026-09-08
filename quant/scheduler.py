@@ -29,8 +29,9 @@ LOG_FILE = LOG_DIR / "scheduler.log"
 JOBS = {
     "news": ["news", "--collect"],
     "paper": ["paper", "--refresh"],
+    "fund": ["fund", "--refresh"],
 }
-DEFAULT_TIMES = {"news": "18:10", "paper": "18:30"}
+DEFAULT_TIMES = {"news": "18:10", "paper": "18:30", "fund": "18:40"}
 
 # 运行状态（进程内存，重启后清空；持久轨迹看 logs/scheduler.log）
 _last_run: dict[str, dict] = {}

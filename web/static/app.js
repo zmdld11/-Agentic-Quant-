@@ -717,9 +717,38 @@ function pct(x, digits) {
     return (x >= 0 ? '+' : '') + (x * 100).toFixed(digits === undefined ? 2 : digits) + '%';
 }
 function loadCockpit() {
+    loadCockpitFund();
     loadCockpitPaper();
     loadCockpitSentiment();
     loadCockpitScheduler();
+}
+
+function loadCockpitFund() {
+    fetch('/api/fund').then(function (r) { return r.json(); }).then(function (d) {
+        var msg = document.getElementById('fundMsg');
+        var cards = document.getElementById('fundCards');
+        var info = document.getElementById('fundInfo');
+        if (!d.available) {
+            msg.textContent = d.message || '基金数据不可用';
+            msg.classList.remove('hidden');
+            cards.innerHTML = ''; info.textContent = '';
+            return;
+        }
+        msg.classList.add('hidden');
+        var rotName = { '510300': '沪深300', '510500': '中证500', '512880': '券商', '518880': '黄金', '513100': '纳指' };
+        cards.innerHTML =
+            '<div class="dual-card"><span class="dual-label">基金净值（' + d.inception + ' 成立）</span><span class="dual-value">' + (d.nav / 10000).toFixed(1) + '万</span></div>' +
+            '<div class="dual-card"><span class="dual-label">累计收益</span><span class="dual-value">' + pct(d.total_return) + '</span></div>' +
+            '<div class="dual-card"><span class="dual-label">轮动引擎 60%</span><span class="dual-value">' + ((d.rotation.value || 0) / 10000).toFixed(1) + '万<br><small>' + (d.rotation.position ? (rotName[d.rotation.position] || d.rotation.position) + ' ' + Math.round(d.rotation.weight * 100) + '%' : '空仓') + '</small></span></div>' +
+            '<div class="dual-card"><span class="dual-label">网格引擎 40%</span><span class="dual-value">' + ((d.grid.value || 0) / 10000).toFixed(1) + '万<br><small>中证500 · ' + d.grid.trades + '笔</small></span></div>';
+        var trades = (d.trades || []).slice(0, 3).map(function (t) {
+            return t.date + ' ' + t.engine + '→' + (t.action || '');
+        }).join(' ｜ ');
+        info.textContent = (d.guard_active ? '🔴 回撤预案已触发（网格停买/波动目标减半）' : '🟢 回撤预案未触发') +
+            (trades ? ' ｜ 最近: ' + trades : ' ｜ 尚未发生交易（成立后首个交易日建仓）');
+    }).catch(function () {
+        document.getElementById('fundInfo').textContent = '基金数据加载失败';
+    });
 }
 
 function loadCockpitScheduler() {

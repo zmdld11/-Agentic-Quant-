@@ -32,6 +32,7 @@ cp .env.example .env               # 填入 DeepSeek key（LLM_API_KEY 或 DEEPS
 # CLI —— 量化管线
 python main.py data                # 下载标的池日线（免费）
 python main.py paper --refresh     # 模拟盘：补账+结算+对账单（日常主命令）
+python main.py fund --refresh      # AI一号基金(50万双引擎)：自动交易+对账单（定时器18:40自动跑）
 python main.py news --collect --digest  # 情绪温度计
 python main.py agent               # 交互式单股 AI 推演
 python main.py signal --refresh    # 每月底看下月持仓建议
